@@ -1,0 +1,31 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Cache
+.cache/
+
+# Claude logs
+.claude/logs/
+
+# Claude local overrides
+.claude/settings.local.json
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/settings.json
