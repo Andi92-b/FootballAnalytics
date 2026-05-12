@@ -13,22 +13,45 @@ interface PlayerData {
 }
 
 export default function Home() {
-  const [query, setQuery] = useState("");
+  const [fbrefUrl, setFbrefUrl] = useState("");
   const [season, setSeason] = useState("2024");
   const [league, setLeague] = useState("ENG-Premier League");
   const [data, setData] = useState<PlayerData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function parseNameFromUrl(raw: string): string {
+    // Handles both profile URLs and season-specific URLs:
+    // https://fbref.com/en/players/\<id\>/Virgil-van-Dijk
+    // https://fbref.com/en/players/\<id\>/2024-2025/Virgil-van-Dijk
+    const clean = raw.trim().replace(/\/$/, "");
+    const parts = clean.split("/").filter(Boolean);
+    const last = parts[parts.length - 1] ?? "";
+    // If last segment looks like a season (e.g. "2024-2025"), use the one before
+    if (/^\d{4}-\d{4}$/.test(last)) {
+      return (parts[parts.length - 2] ?? "").replace(/-/g, " ");
+    }
+    return last.replace(/-/g, " ");
+  }
+
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!fbrefUrl.trim()) return;
+    const playerName = parseNameFromUrl(fbrefUrl);
+    if (!playerName) {
+      setError("Could not parse player name from URL");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      const url = `http://localhost:8000/api/player/${encodeURIComponent(query.trim())}?season=${season}&league=${encodeURIComponent(league)}`;
+      const url = `http://localhost:8000/api/player/${encodeURIComponent(playerName)}?season=${season}&league=${encodeURIComponent(league)}`;
       const res = await fetch(url);
-      if (res.status === 404) throw new Error(`Player "${query}" not found`);
+      if (res.status === 404) throw new Error(`Player "${playerName}" not found in ${league} ${season}`);
+      if (res.status === 422) {
+        const j = await res.json();
+        throw new Error(j.detail);
+      }
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       setData(await res.json());
     } catch (err) {
@@ -43,12 +66,12 @@ export default function Home() {
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Football Analytics</h1>
       <p className="text-gray-500 mb-8">Position-specific pizza charts from FBref data</p>
 
-      <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 w-full max-w-lg mb-10">
+      <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 w-full max-w-2xl mb-10">
         <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Player name (e.g. Virgil van Dijk)"
+          type="url"
+          value={fbrefUrl}
+          onChange={(e) => setFbrefUrl(e.target.value)}
+          placeholder="https://fbref.com/en/players/e46012d0/Virgil-van-Dijk"
           className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <input
