@@ -15,26 +15,29 @@ All formulae match metric-definitions.md exactly. Do not deviate.
 #
 # Exceptions: cross_volume and shot_frequency use FBref columns as fallback for peers
 # (misc.Performance_Crs and shooting.Standard_Sh), so those CAN be percentile-ranked.
-PENDING_METRICS: frozenset[str] = frozenset({
-    # FBref defense table gone
-    "Tackle success",          # defense.Challenges_Tkl% — gone
-    "Back-foot defending",     # defense.Blocks.Sh — gone
-    "One-v-one defending",     # same column — gone
-    # FBref possession table gone
-    "Progressive receptions",  # possession.PrgR — gone
-    # FBref misc column gone
-    "Loose ball recoveries",   # misc.Recov — removed from FBref
-    # FBref passing table gone, no FBref fallback for peers
-    "Launched passes",         # passing.Long.Att — gone; no Sofascore equivalent
-    "Link-up play",            # needs own/opp half split — no FBref fallback for peers
-    "Ball retention",          # pass% — no FBref fallback for peers (passing table gone)
+# Metrics that have been REMOVED from FBref (Jan 2026 data change) or never had
+# FBref peer-group equivalents. These are excluded from position matrices entirely.
+# Kept here only for reference.
+_UNAVAILABLE_METRICS: frozenset[str] = frozenset({
+    "Tackle success",          # defense.Challenges_Tkl% — table gone
+    "Back-foot defending",     # defense.Blocks.Sh — table gone
+    "One-v-one defending",     # same — table gone
+    "Progressive receptions",  # possession.PrgR — table gone
+    "Loose ball recoveries",   # misc.Recov — removed from misc table
+    "Launched passes",         # passing.Long.Att — table gone
+    "Link-up play",            # needs own/opp-half pass split — not in standard/misc
+    "Ball retention",          # pass accuracy — passing table gone
     "Pass progression",        # passes to opp box — no FBref fallback for peers
-    # FBref misc aerial data gone, no FBref fallback for peers
-    "Aerial volume",           # misc.Aerial — gone; Sofascore available for target player only
-    "Aerial success",          # misc.Aerial.Won% — gone; Sofascore for target player only
-    # FBref has no dribbles or carry data; Sofascore/OVO only for target player
-    "Dribble volume",          # no FBref fallback for peers
-    "Carry progression",       # no FBref fallback for peers
+    "Aerial volume",           # misc.Aerial.* — removed from misc table
+    "Aerial success",          # misc.Aerial.Won% — removed from misc table
+    "Dribble volume",          # no FBref dribble column
+    "Carry progression",       # PrgC removed from standard table
+})
+
+# Metrics still in position matrices but temporarily uncomputable.
+PENDING_METRICS: frozenset[str] = frozenset({
+    # Sofascore-only, no FBref fallback for peer group
+    "Box threat",
 })
 
 # Source tier for each metric:
@@ -44,26 +47,14 @@ PENDING_METRICS: frozenset[str] = frozenset({
 #   C          = WhoScored only
 #   pending    = no available source in V1
 METRIC_SOURCES: dict[str, str] = {
-    "Front-foot defending":    "A",        # FBref misc (TklW+Fls+Int) — full peer comparison
-    "Tackle success":          "pending",
-    "Back-foot defending":     "pending",
-    "Loose ball recoveries":   "pending",
-    "Aerial volume":           "pending",  # Sofascore target only; no FBref fallback for peers
-    "Aerial success":          "pending",  # Sofascore target only; no FBref fallback for peers
-    "One-v-one defending":     "pending",
-    "Link-up play":            "pending",  # no FBref fallback for peers
-    "Ball retention":          "pending",  # no FBref fallback for peers
-    "Launched passes":         "pending",
-    "Creative threat":         "A+B",      # Understat xA + FBref Ast — full peer comparison
-    "Cross volume":            "A+SC",     # per90: sofascore.totalCross OR misc.Crs (peers)
-    "Dribble volume":          "pending",  # no FBref fallback for peers
-    "Pass progression":        "pending",  # no FBref fallback for peers
-    "Carry progression":       "pending",  # no FBref fallback for peers
-    "Progressive receptions":  "pending",
-    "Goal threat":             "A+B",      # Understat npxG + FBref goals — full peer comparison
-    "Shot frequency":          "A+SC",     # per90: sofascore.totalShots OR shooting.Sh (peers)
-    "Box threat":              "pending",  # Sofascore target only; no FBref split for peers
-    "Shot quality":            "A+B",      # Understat npxG / shots — full peer comparison
+    "Front-foot defending":    "A",     # FBref misc TklW+Fls+Int — full peer comparison
+    "Creative threat":         "A+B",   # Understat xA + FBref Ast
+    "Cross volume":            "A+SC",  # sofascore.totalCross OR misc.Crs for peers
+    "Goal threat":             "A+B",   # Understat npxG + FBref goals
+    "Shot frequency":          "A+SC",  # sofascore.totalShots OR shooting.Sh for peers
+    "Shot quality":            "A+B",   # Understat npxG / shots
+    "Foul drawing":            "A",     # FBref misc.Fld — full peer comparison
+    "Box threat":              "SC",    # Sofascore target only; pending for peer group
 }
 
 def _get(stats: dict, *keys: str, default: float = 0.0) -> float:
@@ -276,6 +267,15 @@ def shot_quality(stats: dict) -> float:
     return npxg / sh
 
 
+def foul_drawing(stats: dict) -> float:
+    """Times fouled / 90 — Tier A (FBref misc.Fld).
+    For attackers: a proxy for ball-carrying and direct duels won.
+    Higher = more involved in direct 1v1 situations that draw fouls.
+    """
+    fld = _get(stats, "misc.Performance_Fld", "misc.Fld")
+    return _per90(fld, stats)
+
+
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 METRIC_FUNCTIONS: dict[str, callable] = {
@@ -299,6 +299,7 @@ METRIC_FUNCTIONS: dict[str, callable] = {
     "Shot frequency": shot_frequency,
     "Box threat": box_threat,
     "Shot quality": shot_quality,
+    "Foul drawing": foul_drawing,
 }
 
 
