@@ -11,7 +11,15 @@ _SD_TABLES = ["standard", "shooting", "misc"]
 
 def get_pizza_data(player_name: str, season: int, league: str) -> PizzaData:
     """Fetch player stats and compute percentiles. Returns PizzaData."""
-    tables = fetch_tables(league, season, _CACHE_DIR, tables=_SD_TABLES)
+    from fastapi import HTTPException
+    try:
+        tables = fetch_tables(league, season, _CACHE_DIR, tables=_SD_TABLES)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Season {season} data not available for {league}. "
+                   f"Only completed seasons are supported. ({exc})",
+        ) from exc
     tables = add_team_poss(tables)
 
     std = tables["standard"]

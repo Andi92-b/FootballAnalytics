@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.app.routers import player
 
@@ -13,6 +14,12 @@ app.add_middleware(
 )
 
 app.include_router(player.router)
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so CORS headers are always present on error responses."""
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 @app.get("/health")

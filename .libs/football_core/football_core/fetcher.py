@@ -154,6 +154,12 @@ def fetch_tables(
     return result
 
 
+def _normalize(s: str) -> str:
+    """Lowercase + strip accents for accent-insensitive matching."""
+    import unicodedata
+    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode().lower()
+
+
 def get_player_row(df: pd.DataFrame, player_name: str) -> pd.Series | None:
     """Return the player's row with the most minutes (handles mid-season transfers)."""
     # Find the player name column — handles 'player', 'Player', or 'Unnamed: 1_level_0_Player'
@@ -173,7 +179,12 @@ def get_player_row(df: pd.DataFrame, player_name: str) -> pd.Series | None:
     if player_col is None:
         return None
 
+    # Exact match first; fall back to accent-insensitive match
     rows = df[df[player_col] == player_name]
+    if rows.empty:
+        norm_query = _normalize(player_name)
+        mask = df[player_col].apply(lambda n: _normalize(str(n)) == norm_query)
+        rows = df[mask]
     if rows.empty:
         return None
     if len(rows) == 1:
