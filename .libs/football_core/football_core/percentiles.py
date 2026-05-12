@@ -19,6 +19,18 @@ POSITION_MAP: dict[str, str] = {
     "AM": "AM",
     "RW": "W", "LW": "W", "LM": "W", "RM": "W",
     "CF": "CF", "FW": "CF", "ST": "CF",
+    "GK": "GK",
+}
+
+# Multi-part FBref position strings (e.g. "MF,FW", "FW,MF", "DF,MF")
+# Resolved in order: first recognised part wins.
+POSITION_MAP_MULTI: dict[str, str] = {
+    "MF,FW": "W",
+    "FW,MF": "W",
+    "DF,MF": "DM",
+    "MF,DF": "DM",
+    "DF,FW": "FB",
+    "FW,DF": "FB",
 }
 
 # ── Position × metric matrix ──────────────────────────────────────────────────
@@ -90,6 +102,8 @@ POSITION_MATRIX: dict[str, list[tuple[str, str]]] = {
         ("Progressive receptions", _PR),
         ("Goal threat", _A),
         ("Shot frequency", _A),
+        ("Box threat", _A),
+        ("Shot quality", _A),
     ],
     "AM": [
         ("Front-foot defending", _D),
@@ -136,11 +150,16 @@ POSITION_MATRIX: dict[str, list[tuple[str, str]]] = {
 
 def map_position(fbref_pos_string: str) -> str:
     """Map a raw FBref position string to a position bucket."""
-    parts = [p.strip() for p in fbref_pos_string.split(",")]
+    s = fbref_pos_string.strip()
+    # Exact multi-part match first (e.g. "MF,FW")
+    if s in POSITION_MAP_MULTI:
+        return POSITION_MAP_MULTI[s]
+    # Single-part or first-part match
+    parts = [p.strip() for p in s.split(",")]
     for part in parts:
         if part in POSITION_MAP:
             return POSITION_MAP[part]
-    raise ValueError(f"Unknown FBref position: {fbref_pos_string!r}")
+    return "CM"  # safe fallback — skip unknowns rather than raising
 
 
 def get_position_profile(position_bucket: str, fbref_string: str = "") -> PositionProfile:
@@ -156,7 +175,7 @@ def get_position_profile(position_bucket: str, fbref_string: str = "") -> Positi
 
 
 def _get_player_pos_string(player_stats: dict) -> str:
-    for key in ("standard.Pos", "standard.Position"):
+    for key in ("standard.pos", "standard.Pos", "standard.Position"):
         val = player_stats.get(key)
         if val and str(val) not in ("nan", "None", ""):
             return str(val)
@@ -206,18 +225,19 @@ def compute_percentiles(
     metric_names: list[str] = []
     for name in all_metric_names:
         tier = METRIC_SOURCES.get(name, "A")
-        # Explicitly pending (data gone from all sources)
+        # Explicitly pending (data gone from all sources, or no FBref fallback for peer group)
         if name in PENDING_METRICS:
-            missing_metrics.append(name)
-            continue
-        # Pure Tier C or Tier A+C: requires WhoScored
-        if tier in ("C", "A+C") and "whoscored" not in available_sources:
             missing_metrics.append(name)
             continue
         # Tier A+B: requires Understat
         if "B" in tier and "understat" not in available_sources:
             missing_metrics.append(name)
             continue
+        # Pure Tier C or A+C (WhoScored-only, no Sofascore fallback coded)
+        if tier in ("C", "A+C") and "whoscored" not in available_sources:
+            missing_metrics.append(name)
+            continue
+        # A+SC metrics use FBref fallbacks for peers — always computable
         metric_names.append(name)
 
     # Build peer group: same position bucket, min minutes
