@@ -31,10 +31,11 @@ class PlayerResponse(BaseModel):
 class PlayerSeasonsResponse(BaseModel):
     player: str
     display_name: str
-    league: str
+    league: str  # current/default league
     position: str
     team: str
     seasons: list[int]
+    seasons_info: list[dict]  # [{season: int, league: str}, ...]
 
 
 @router.get("/player/{name}/seasons", response_model=PlayerSeasonsResponse)
@@ -47,7 +48,6 @@ async def get_player_seasons(name: str) -> PlayerSeasonsResponse:
 
     entry = registry.get(name)
     if entry is None:
-        # Try case-insensitive match
         lower = name.lower()
         entry = next((v for k, v in registry.items() if k.lower() == lower), None)
         if entry is None:
@@ -57,16 +57,30 @@ async def get_player_seasons(name: str) -> PlayerSeasonsResponse:
                 detail=f"Player '{name}' not found in registry. Known players: {known}",
             )
 
+    current_league: str = entry.get("fbref_league", "GER-Bundesliga")
     current_season: int = entry.get("fbref_season", 2025)
-    seasons = list(range(current_season - 4, current_season + 1))  # last 5 seasons
+    league_history: dict = entry.get("league_history", {})
+
+    if league_history:
+        # Build season list from history, sorted ascending
+        seasons_info = [
+            {"season": int(yr), "league": lg}
+            for yr, lg in sorted(league_history.items(), key=lambda x: int(x[0]))
+        ]
+        seasons = [s["season"] for s in seasons_info]
+    else:
+        # Fallback: last 5 seasons in the current league
+        seasons = list(range(current_season - 4, current_season + 1))
+        seasons_info = [{"season": yr, "league": current_league} for yr in seasons]
 
     return PlayerSeasonsResponse(
         player=name,
         display_name=entry.get("display_name", name),
-        league=entry.get("fbref_league", "GER-Bundesliga"),
+        league=current_league,
         position=entry.get("position", ""),
         team=entry.get("current_team", ""),
         seasons=seasons,
+        seasons_info=seasons_info,
     )
 
 

@@ -14,6 +14,12 @@
     "footystats_slug": "colombia/luis-diaz",
     "ovo_slug": "Luis-Diaz-45145",
     "fbref_league": "GER-Bundesliga",
-    "fbref_season": 2025
+    "fbref_season": 2025,
+    "league_history": {
+      "2025": "GER-Bundesliga",
+      "2024": "ENG-Premier League",
+      "2023": "ENG-Premier League",
+      "2022": "ENG-Premier League"
+    }
   }
 }

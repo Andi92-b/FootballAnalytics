@@ -95,7 +95,16 @@ def fetch_understat(
 
     log.info("Fetching Understat data for %s %s …", league, season)
     try:
-        players_raw = asyncio.run(_fetch_async(league_slug, season))
+        import concurrent.futures
+        # asyncio.run() raises RuntimeError if called from a running event loop
+        # (e.g. inside FastAPI). Run in a thread instead — threads always have
+        # a fresh event loop available.
+        def _run():
+            import asyncio as _asyncio
+            return _asyncio.run(_fetch_async(league_slug, season))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            players_raw = pool.submit(_run).result(timeout=30)
     except Exception as exc:
         log.warning("Understat fetch failed: %s", exc)
         return None

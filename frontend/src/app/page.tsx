@@ -13,6 +13,7 @@ interface PlayerSeasonsInfo {
   position: string;
   team: string;
   seasons: number[];
+  seasons_info: { season: number; league: string }[];
 }
 
 interface PlayerData {
@@ -58,7 +59,8 @@ export default function Home() {
       const info: PlayerSeasonsInfo = await res.json();
       setPlayerInfo(info);
       // Auto-load the most recent season
-      await loadSeason(info, info.seasons[info.seasons.length - 1]);
+      const latest = info.seasons_info[info.seasons_info.length - 1];
+      await loadSeason(info, latest.season, latest.league);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -66,12 +68,12 @@ export default function Home() {
     }
   }
 
-  async function loadSeason(info: PlayerSeasonsInfo, season: number) {
+  async function loadSeason(info: PlayerSeasonsInfo, season: number, league: string) {
     setSelectedSeason(season);
     setIsLoadingChart(true);
     setError(null);
     try {
-      const url = `${API}/api/player/${encodeURIComponent(info.player)}?season=${season}&league=${encodeURIComponent(info.league)}`;
+      const url = `${API}/api/player/${encodeURIComponent(info.player)}?season=${season}&league=${encodeURIComponent(league)}`;
       const res = await fetch(url);
       if (res.status === 404) throw new Error(`No data for ${info.display_name} in ${seasonLabel(season)}`);
       if (res.status === 422) {
@@ -127,18 +129,19 @@ export default function Home() {
           </span>
           <span className="text-gray-300">|</span>
           <div className="flex gap-1.5">
-            {[...playerInfo.seasons].reverse().map((yr) => (
+            {[...playerInfo.seasons_info].reverse().map(({ season, league }) => (
               <button
-                key={yr}
-                onClick={() => loadSeason(playerInfo, yr)}
+                key={season}
+                onClick={() => loadSeason(playerInfo, season, league)}
                 disabled={isLoadingChart}
+                title={league}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  selectedSeason === yr
+                  selectedSeason === season
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 } disabled:opacity-50`}
               >
-                {seasonLabel(yr)}
+                {seasonLabel(season)}
               </button>
             ))}
           </div>

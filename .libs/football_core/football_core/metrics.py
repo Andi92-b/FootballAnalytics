@@ -53,7 +53,9 @@ METRIC_SOURCES: dict[str, str] = {
     "Goal threat":             "A+B",   # Understat npxG + FBref goals
     "Shot frequency":          "A+SC",  # sofascore.totalShots OR shooting.Sh for peers
     "Shot quality":            "A+B",   # Understat npxG / shots
+    "Shot accuracy":           "A",     # FBref shooting.SoT% — full peer comparison
     "Foul drawing":            "A",     # FBref misc.Fld — full peer comparison
+    "Runs in behind":          "A",     # FBref misc.Off/90 — full peer comparison
     "Box threat":              "SC",    # Sofascore target only; pending for peer group
 }
 
@@ -267,6 +269,25 @@ def shot_quality(stats: dict) -> float:
     return npxg / sh
 
 
+def shot_accuracy(stats: dict) -> float:
+    """Shots on target % — Tier A (FBref shooting.Standard_SoT%).
+    Measures technical shooting execution: how often shots are placed on target.
+    Complements shot_quality (chance quality) — this is about delivery, not position.
+    Derived from The Athletic's player pizza charts methodology.
+    """
+    return _get(stats, "shooting.Standard_SoT%", "shooting.SoT%") / 100.0
+
+
+def runs_in_behind(stats: dict) -> float:
+    """Offsides caught / 90 — Tier A (FBref misc.Performance_Off).
+    Proxy for penetrating forward runs beyond the defensive line.
+    Players with high values are consistently making runs in behind.
+    Inspired by The Athletic's playstyle wheels 'high line' methodology,
+    adapted to player level.
+    """
+    return _per90(_get(stats, "misc.Performance_Off", "misc.Off"), stats)
+
+
 def foul_drawing(stats: dict) -> float:
     """Times fouled / 90 — Tier A (FBref misc.Fld).
     For attackers: a proxy for ball-carrying and direct duels won.
@@ -299,6 +320,8 @@ METRIC_FUNCTIONS: dict[str, callable] = {
     "Shot frequency": shot_frequency,
     "Box threat": box_threat,
     "Shot quality": shot_quality,
+    "Shot accuracy": shot_accuracy,
+    "Runs in behind": runs_in_behind,
     "Foul drawing": foul_drawing,
 }
 
