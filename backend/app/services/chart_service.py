@@ -1,7 +1,8 @@
 """chart_service — renders pizza chart SVG from PizzaData."""
-# TODO: implement via player-endpoint skill
+from football_core.models import PizzaData
+from football_core.renderer import render_pizza
 
 
-def render(pizza_data: dict) -> str:
+def render(pizza_data: PizzaData) -> str:
     """Render pizza chart, return SVG string."""
-    raise NotImplementedError
+    return render_pizza(pizza_data)

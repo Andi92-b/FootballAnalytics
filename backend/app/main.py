@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import player
+from backend.app.routers import player
 
 app = FastAPI(title="Football Analytics API", version="0.1.0")
 
