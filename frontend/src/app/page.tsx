@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PizzaChart, MetricResult } from "@/components/PizzaChart";
+import { PlayerProfile } from "@/components/PlayerProfile";
 
 interface PlayerData {
   player: string;
@@ -132,6 +133,16 @@ export default function Home() {
         isLoading={isLoading}
         error={error}
       />
+
+      {/* ── Stats Dashboard ── */}
+      <hr className="w-full max-w-3xl border-gray-200 my-12" />
+      <section className="w-full max-w-3xl">
+        <h2 className="text-xl font-semibold text-gray-800 mb-6">
+          Player Stats Dashboard
+          <span className="ml-2 text-sm font-normal text-gray-400">— Luis Díaz · Bayern München</span>
+        </h2>
+        <PlayerProfile />
+      </section>
     </main>
   );
 }
