@@ -103,6 +103,123 @@ def fetch_sofascore(
     return stats
 
 
+# ── League-wide stats config ──────────────────────────────────────────────────
+
+# FBref league name → Sofascore unique-tournament ID
+SOFASCORE_TOURNAMENT_IDS: dict[str, int] = {
+    "GER-Bundesliga":      35,
+    "ENG-Premier League":  17,
+    "ESP-La Liga":          8,
+    "ITA-Serie A":         23,
+    "FRA-Ligue 1":         34,
+}
+
+# (fbref_league, fbref_season_year) → Sofascore season_id
+# fbref_season_year = the year the season starts (e.g. 2025 = 2025/26)
+SOFASCORE_SEASON_IDS: dict[tuple[str, int], int] = {
+    ("GER-Bundesliga", 2025): 77333,
+    ("GER-Bundesliga", 2024): 63516,
+    ("GER-Bundesliga", 2023): 52608,
+    ("GER-Bundesliga", 2022): 42268,
+    ("ENG-Premier League", 2025): 76986,
+    ("ENG-Premier League", 2024): 61627,
+    ("ENG-Premier League", 2023): 52186,
+    ("ENG-Premier League", 2022): 41886,
+    ("ESP-La Liga", 2025): 77559,
+    ("ESP-La Liga", 2024): 61643,
+    ("ESP-La Liga", 2023): 52376,
+    ("ITA-Serie A", 2025): 76457,
+    ("ITA-Serie A", 2024): 63515,
+    ("ITA-Serie A", 2023): 52760,
+    ("FRA-Ligue 1", 2025): 77356,
+    ("FRA-Ligue 1", 2024): 61736,
+    ("FRA-Ligue 1", 2023): 52571,
+}
+
+# Stats fields to request from the tournament endpoint — covers all pizza metrics
+_LEAGUE_STAT_FIELDS = (
+    "tackles,tacklesWon,tacklesWonPercentage,"
+    "aerialDuelsWon,aerialDuelsWonPercentage,aerialLost,"
+    "successfulDribbles,successfulDribblesPercentage,"
+    "ballRecovery,minutesPlayed"
+)
+
+
+def fetch_sofascore_league_stats(
+    league: str,
+    season: int,
+    cache_dir: Path,
+    force_refresh: bool = False,
+) -> dict[str, dict] | None:
+    """Fetch stats for all players in a league/season from Sofascore.
+
+    Returns a dict keyed by player name (as Sofascore spells it), e.g.::
+
+        {"Harry Kane": {"tackles": 12, "aerialDuelsWon": 45, ...}, ...}
+
+    Returns None if the league/season is not in our config or the fetch fails.
+    """
+    tournament_id = SOFASCORE_TOURNAMENT_IDS.get(league)
+    season_id = SOFASCORE_SEASON_IDS.get((league, season))
+    if tournament_id is None or season_id is None:
+        log.debug("No Sofascore config for %s %s — skipping league stats", league, season)
+        return None
+
+    path = cache_dir / "sofascore" / f"league_{tournament_id}_{season_id}.json"
+    if not force_refresh and path.exists():
+        try:
+            data = json.loads(path.read_text())
+            log.info("Sofascore league stats cache hit: %s (%d players)", path.name, len(data))
+            return data
+        except Exception:
+            pass
+
+    log.info("Fetching Sofascore league stats for %s %s (tournament=%s, season=%s)",
+             league, season, tournament_id, season_id)
+    session = _make_session()
+    url = f"{_BASE}/unique-tournament/{tournament_id}/season/{season_id}/statistics"
+    all_players: dict[str, dict] = {}
+
+    try:
+        page = 0
+        while True:
+            params = {
+                "limit": 100,
+                "order": "-rating",
+                "accumulation": "total",
+                "fields": _LEAGUE_STAT_FIELDS,
+                "offset": page * 100,
+            }
+            resp = session.get(url, params=params, timeout=30)
+            if resp.status_code != 200:
+                log.warning("Sofascore league stats HTTP %s (page %d)", resp.status_code, page)
+                break
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                break
+            for entry in results:
+                name = entry["player"]["name"]
+                pid = entry["player"]["id"]
+                stats = {k: v for k, v in entry.items() if k not in ("player", "team")}
+                stats["_sofascore_id"] = pid
+                all_players[name] = stats
+            pages = data.get("pages", 1)
+            page += 1
+            if page >= pages:
+                break
+    except Exception as exc:
+        log.warning("Sofascore league stats fetch failed: %s", exc)
+        if not all_players:
+            return None
+
+    if all_players:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(all_players, indent=2))
+        log.info("Sofascore league stats cached: %d players → %s", len(all_players), path.name)
+    return all_players or None
+
+
 def fetch_sofascore_seasons(player_id: int, cache_dir: Path, force_refresh: bool = False) -> list[dict]:
     """Return the full competition-season list for a player."""
     path = cache_dir / "sofascore" / str(player_id) / "seasons.json"

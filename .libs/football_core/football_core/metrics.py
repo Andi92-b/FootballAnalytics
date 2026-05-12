@@ -19,7 +19,7 @@ All formulae match metric-definitions.md exactly. Do not deviate.
 # FBref peer-group equivalents. These are excluded from position matrices entirely.
 # Kept here only for reference.
 _UNAVAILABLE_METRICS: frozenset[str] = frozenset({
-    "Tackle success",          # defense.Challenges_Tkl% — table gone
+    # FBref tables removed in Jan 2026 — no replacement possible from standard/shooting/misc
     "Back-foot defending",     # defense.Blocks.Sh — table gone
     "One-v-one defending",     # same — table gone
     "Progressive receptions",  # possession.PrgR — table gone
@@ -28,10 +28,9 @@ _UNAVAILABLE_METRICS: frozenset[str] = frozenset({
     "Link-up play",            # needs own/opp-half pass split — not in standard/misc
     "Ball retention",          # pass accuracy — passing table gone
     "Pass progression",        # passes to opp box — no FBref fallback for peers
-    "Aerial volume",           # misc.Aerial.* — removed from misc table
-    "Aerial success",          # misc.Aerial.Won% — removed from misc table
-    "Dribble volume",          # no FBref dribble column
     "Carry progression",       # PrgC removed from standard table
+    # Previously unavailable, now unlocked via Sofascore league stats:
+    # "Tackle success", "Aerial volume", "Aerial success", "Dribble volume", "Ball recovery"
 })
 
 # Metrics still in position matrices but temporarily uncomputable.
@@ -47,16 +46,21 @@ PENDING_METRICS: frozenset[str] = frozenset({
 #   C          = WhoScored only
 #   pending    = no available source in V1
 METRIC_SOURCES: dict[str, str] = {
-    "Front-foot defending":    "A",     # FBref misc TklW+Fls+Int — full peer comparison
-    "Creative threat":         "A+B",   # Understat xA + FBref Ast
-    "Cross volume":            "A+SC",  # sofascore.totalCross OR misc.Crs for peers
-    "Goal threat":             "A+B",   # Understat npxG + FBref goals
-    "Shot frequency":          "A+SC",  # sofascore.totalShots OR shooting.Sh for peers
-    "Shot quality":            "A+B",   # Understat npxG / shots
-    "Shot accuracy":           "A",     # FBref shooting.SoT% — full peer comparison
-    "Foul drawing":            "A",     # FBref misc.Fld — full peer comparison
-    "Runs in behind":          "A",     # FBref misc.Off/90 — full peer comparison
-    "Box threat":              "SC",    # Sofascore target only; pending for peer group
+    "Front-foot defending":    "A",    # FBref misc TklW+Fls+Int
+    "Creative threat":         "A+B",  # Understat xA + FBref Ast
+    "Cross volume":            "A+SC", # sofascore.totalCross OR misc.Crs for peers
+    "Goal threat":             "A+B",  # Understat npxG + FBref goals
+    "Shot frequency":          "A+SC", # sofascore.totalShots OR shooting.Sh for peers
+    "Shot quality":            "A+B",  # Understat npxG / shots
+    "Shot accuracy":           "A",    # FBref shooting.SoT%
+    "Foul drawing":            "A",    # FBref misc.Fld
+    "Runs in behind":          "A",    # FBref misc.Off/90
+    "Tackle success":          "SC",   # sofascore.tacklesWonPercentage (league-wide)
+    "Aerial volume":           "SC",   # sofascore.(aerialDuelsWon+aerialLost)/90
+    "Aerial success":          "SC",   # sofascore.aerialDuelsWonPercentage
+    "Dribble volume":          "SC",   # sofascore.successfulDribbles/90
+    "Ball recovery":           "SC",   # sofascore.ballRecovery/90
+    "Box threat":              "SC",   # Sofascore target only; pending for peer group
 }
 
 def _get(stats: dict, *keys: str, default: float = 0.0) -> float:
@@ -118,8 +122,11 @@ def front_foot_defending(stats: dict) -> float:
 
 
 def tackle_success(stats: dict) -> float:
-    """Challenges.Tkl% (pre-computed by FBref)"""
-    return _get(stats, "defense.Challenges_Tkl%", "defense.Tkl%", "defense.Challenges.Tkl%")
+    """tacklesWonPercentage — Sofascore league stats (Tier SC).
+    Falls back to FBref defense table (removed Jan 2026, so usually 0 for peer group).
+    """
+    return _get(stats, "sofascore.tacklesWonPercentage",
+                "defense.Challenges_Tkl%", "defense.Tkl%", "defense.Challenges.Tkl%")
 
 
 def back_foot_defending(stats: dict) -> float:
@@ -136,6 +143,13 @@ def loose_ball_recoveries(stats: dict) -> float:
     """Recov / 90"""
     recov = _get(stats, "misc.Recov", "misc.Performance_Recov")
     return _per90(recov, stats)
+
+
+def ball_recovery(stats: dict) -> float:
+    """ballRecovery / 90 — Sofascore league stats (Tier SC).
+    Counts pressing actions that won the ball back.
+    """
+    return _per90(_get(stats, "sofascore.ballRecovery"), stats)
 
 
 def aerial_volume(stats: dict) -> float:
@@ -306,6 +320,7 @@ METRIC_FUNCTIONS: dict[str, callable] = {
     "Loose ball recoveries": loose_ball_recoveries,
     "Aerial volume": aerial_volume,
     "Aerial success": aerial_success,
+    "Ball recovery": ball_recovery,
     "One-v-one defending": one_v_one_defending,
     "Link-up play": link_up_play,
     "Ball retention": ball_retention,

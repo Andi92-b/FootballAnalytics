@@ -23,6 +23,7 @@ from pathlib import Path
 import pandas as pd
 
 from football_core.sources.fbref import fetch_fbref
+from football_core.sources.sofascore import fetch_sofascore_league_stats
 from football_core.sources.understat import fetch_understat
 from football_core.sources.whoscored import fetch_whoscored
 
@@ -36,6 +37,7 @@ class FetchResult:
     data_freshness: dict[str, str]
     understat_data: dict[str, dict] | None = None
     whoscored_data: dict[str, dict] | None = None
+    sofascore_league_data: dict[str, dict] | None = None
 
 
 def fetch_all(
@@ -79,6 +81,18 @@ def fetch_all(
     except Exception as exc:
         log.warning("WhoScored tier failed: %s", exc)
 
+    # ── Tier D: Sofascore league-wide stats ──────────────────────────────────
+    sofascore_league_data: dict[str, dict] | None = None
+    try:
+        sofascore_league_data = fetch_sofascore_league_stats(
+            league, season, cache_dir, force_refresh=force_refresh
+        )
+        if sofascore_league_data is not None:
+            available_sources.append("sofascore_league")
+            freshness["sofascore_league"] = today
+    except Exception as exc:
+        log.warning("Sofascore league tier failed: %s", exc)
+
     log.info("Pipeline complete — sources available: %s", available_sources)
     return FetchResult(
         fbref_tables=fbref_tables,
@@ -86,4 +100,5 @@ def fetch_all(
         data_freshness=freshness,
         understat_data=understat_data,
         whoscored_data=whoscored_data,
+        sofascore_league_data=sofascore_league_data,
     )
