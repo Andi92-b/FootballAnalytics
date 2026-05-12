@@ -6,7 +6,7 @@ import pandas as pd
 from scipy.stats import percentileofscore
 
 from football_core.models import MetricResult, PositionProfile
-from football_core.metrics import compute_metric_values
+from football_core.metrics import compute_metric_values, PENDING_METRICS, METRIC_SOURCES
 
 # ── Position mapping ──────────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ def _get_player_pos_string(player_stats: dict) -> str:
 
 
 def _get_minutes(player_stats: dict) -> float:
-    for key in ("standard.Min", "standard.Playing_Time_Min"):
+    for key in ("standard.Playing Time_Min", "standard.Min", "standard.Playing_Time_Min"):
         val = player_stats.get(key)
         if val is not None:
             try:
@@ -179,24 +179,46 @@ def compute_percentiles(
     all_player_stats: list[dict],
     position_bucket: str,
     min_minutes: int = 900,
-) -> list[MetricResult]:
+    available_sources: list[str] | None = None,
+) -> tuple[list[MetricResult], list[str]]:
     """
     Compute percentile ranks for the player within their positional peer group.
 
     Parameters
     ----------
-    player_stats       : flat merged dict for the target player
+    player_stats       : flat merged dict for the target player (with injected source namespaces)
     all_player_stats   : list of flat merged dicts for all players in the league
     position_bucket    : e.g. "CB"
     min_minutes        : minimum minutes to qualify as a peer
+    available_sources  : list of available source names (e.g. ["fbref", "understat"])
 
     Returns
     -------
-    list[MetricResult] in profile order
+    (list[MetricResult], missing_metrics: list[str])
     """
+    available_sources = available_sources or ["fbref"]
     profile = get_position_profile(position_bucket)
-    metric_names = [m["name"] for m in profile.metrics]
+    all_metric_names = [m["name"] for m in profile.metrics]
     metric_cats = {m["name"]: m["category"] for m in profile.metrics}
+
+    # Split metrics into computable vs missing
+    missing_metrics: list[str] = []
+    metric_names: list[str] = []
+    for name in all_metric_names:
+        tier = METRIC_SOURCES.get(name, "A")
+        # Explicitly pending (data gone from all sources)
+        if name in PENDING_METRICS:
+            missing_metrics.append(name)
+            continue
+        # Pure Tier C or Tier A+C: requires WhoScored
+        if tier in ("C", "A+C") and "whoscored" not in available_sources:
+            missing_metrics.append(name)
+            continue
+        # Tier A+B: requires Understat
+        if "B" in tier and "understat" not in available_sources:
+            missing_metrics.append(name)
+            continue
+        metric_names.append(name)
 
     # Build peer group: same position bucket, min minutes
     peers = []
@@ -229,11 +251,13 @@ def compute_percentiles(
         peer_vals = peer_raw_values[name]
         pct = percentileofscore(peer_vals, raw, kind="rank")
         pct = max(0, min(99, round(pct)))
+        source = METRIC_SOURCES.get(name, "fbref")
         results.append(MetricResult(
             name=name,
             category=metric_cats[name],
             raw=raw,
             percentile=pct,
+            source=source,
         ))
 
-    return results
+    return results, missing_metrics

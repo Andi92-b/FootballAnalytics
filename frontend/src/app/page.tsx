@@ -9,6 +9,8 @@ interface PlayerData {
   season: string;
   league: string;
   metrics: MetricResult[];
+  missing_metrics: string[];
+  data_sources: string[];
   svg: string;
 }
 
@@ -125,6 +127,8 @@ export default function Home() {
         season={data?.season ?? ""}
         league={data?.league ?? ""}
         metrics={data?.metrics ?? []}
+        missingMetrics={data?.missing_metrics ?? []}
+        dataSources={data?.data_sources ?? []}
         isLoading={isLoading}
         error={error}
       />

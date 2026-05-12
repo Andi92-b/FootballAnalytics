@@ -6,18 +6,54 @@ the pizza chart pipeline.
 
 ---
 
+## ⚠️ DATA SOURCE CHANGE — 2026-01-20
+
+**FBref terminated its Opta/Stats Perform data contract on 2026-01-20.**
+
+The following tables are **no longer available** from FBref (pages exist but return no stat cells):
+- `passing` — all pass split / progressive pass / xAG data gone
+- `passing_types` — crosses, key passes, set piece types gone
+- `defense` — tackles, challenges, blocks, clearances gone
+- `possession` — touches by zone, carries, dribbles, progressive carries/receptions gone
+
+The pipeline now uses a **three-tier strategy**:
+- **Tier A — FBref** (`standard`, `shooting`, `misc`) — basic stats, still valid
+- **Tier B — Understat** (`https://understat.com`) — npxG, xA (Big-5 leagues only)
+- **Tier C — WhoScored** (stub in V1) — touches, carries, dribbles, advanced defensive stats
+
+### What FBref still provides
+
+| Table | Available columns |
+|-------|-------------------|
+| `standard` | Goals, Assists, PK, Minutes, Position (`Performance_*` prefix) |
+| `shooting` | Shots (`Standard_Sh`), basic shot stats |
+| `misc` | Yellow/red cards, Fouls committed (`Performance_Fls`), Interceptions (`Performance_Int`), Tackles won (`Performance_TklW`) |
+
+### What moved to alternative sources
+
+| Stat | Old source | New source |
+|------|-----------|------------|
+| npxG, xA | FBref shooting/passing | **Tier B: Understat** |
+| Touches by zone, carries, dribbles | FBref possession | **Tier C: WhoScored (pending)** |
+| Tackles, challenges, blocks | FBref defense | **Tier C: WhoScored (pending)** |
+| Clearances, blocked shots | FBref defense | **Tier C: WhoScored (pending)** |
+| Pass splits, xAG, progressive passes | FBref passing | **No open source — pending_data** |
+| Pass completion % | FBref passing | **No open source — pending_data** |
+| Progressive carries/receptions | FBref possession | **No open source — pending_data** |
+
+---
+
 ## Quick-reference table
 
-| soccerdata table key | FBref stat page URL path | soccerdata `stat` param |
-|---|---|---|
-| Standard stats | `/en/comps/{id}/{season}/stats/` | `"standard"` |
-| Shooting | `/en/comps/{id}/{season}/shooting/` | `"shooting"` |
-| Passing | `/en/comps/{id}/{season}/passing/` | `"passing"` |
-| Pass types | `/en/comps/{id}/{season}/passing_types/` | `"passing_types"` |
-| Defensive actions | `/en/comps/{id}/{season}/defense/` | `"defense"` |
-| Possession | `/en/comps/{id}/{season}/possession/` | `"possession"` |
-| Miscellaneous | `/en/comps/{id}/{season}/misc/` | `"misc"` |
-| Team stats | See note below | `"schedule"` or direct |
+| soccerdata table key | FBref stat page URL path | soccerdata `stat` param | Status |
+|---|---|---|---|
+| Standard stats | `/en/comps/{id}/{season}/stats/` | `"standard"` | ✅ Available |
+| Shooting | `/en/comps/{id}/{season}/shooting/` | `"shooting"` | ✅ Available (basic only) |
+| Miscellaneous | `/en/comps/{id}/{season}/misc/` | `"misc"` | ✅ Available (basic only) |
+| Passing | `/en/comps/{id}/{season}/passing/` | `"passing"` | ❌ Empty post-2026-01-20 |
+| Pass types | `/en/comps/{id}/{season}/passing_types/` | `"passing_types"` | ❌ Empty post-2026-01-20 |
+| Defensive actions | `/en/comps/{id}/{season}/defense/` | `"defense"` | ❌ Empty post-2026-01-20 |
+| Possession | `/en/comps/{id}/{season}/possession/` | `"possession"` | ❌ Empty post-2026-01-20 |
 
 ---
 

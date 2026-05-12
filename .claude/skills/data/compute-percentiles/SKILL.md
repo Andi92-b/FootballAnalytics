@@ -1,12 +1,13 @@
 ---
 name: "compute-percentiles"
-description: "Takes a player's raw stat rows (from fetch-player) and computes metric values and percentile ranks (0–99) within the positional peer group (same league, same position bucket, minimum 900 minutes played). Returns structured JSON."
-version: 0.1.0
+description: "Takes a player's merged stats dict (from fetch-player, all three tiers merged) and computes percentile ranks for the metrics available given the active source tiers. Returns MetricResult list + missing_metrics list."
+version: 0.2.0
 capabilities:
-  - "Metric value computation for all metrics in the player's position profile using formulae from metric-definitions.md"
-  - "Positional peer group filtering: same position bucket, 900+ minutes"
-  - "Percentile rank calculation via scipy.stats.percentileofscore (kind='rank')"
-  - "Structured output: { player, position, season, league, metrics: [{ name, category, raw, percentile }] }"
+  - "Filters the position profile to only metrics computable from available_sources"
+  - "Metrics in PENDING_METRICS or requiring unavailable tiers → missing_metrics list"
+  - "Percentile rank via scipy.stats.percentileofscore (kind='rank'), clamped 0–99"
+  - "Each MetricResult includes a 'source' field (e.g. 'A', 'A+B', 'C', 'pending')"
+  - "Returns (list[MetricResult], list[str]) — results + missing_metrics"
 triggers:
   - "compute percentiles"
   - "calculate percentiles"
@@ -14,8 +15,52 @@ triggers:
   - "percentile scores"
   - "build pizza data"
   - "percentile ranks"
-last_updated: 2026-05-11
+last_updated: 2026-05-12
 ---
+
+# Compute Percentiles
+
+Computes metric values and percentile ranks for a player, respecting available source tiers.
+
+**Before executing:** Read `.claude/shared-references/metrics/metric-definitions.md`.
+
+---
+
+## Step 1 — Load merged stats
+
+Accept the player merged dict from `fetch-player` (with `understat.*` and `whoscored.*` keys).
+
+---
+
+## Step 2 — Determine position bucket and metric list
+
+Call `map_position()`. Get the full position profile. Then filter:
+- If metric name is in `PENDING_METRICS` → `missing_metrics`
+- If tier is `A+B` and `"understat"` not in `available_sources` → `missing_metrics`
+- If tier is `C` or `A+C` and `"whoscored"` not in `available_sources` → `missing_metrics`
+
+---
+
+## Step 3 — Filter peer group and compute percentiles
+
+For computable metrics only: build peer group (same position bucket, 900+ min), compute raw values for all peers, then `percentileofscore`.
+
+---
+
+## Step 4 — Output structured JSON
+
+```json
+{
+  "player": "Luis D\u00edaz",
+  "position": "CF",
+  "data_sources": ["fbref", "understat"],
+  "metrics": [
+    { "name": "Goal threat", "category": "Attack", "raw": 0.47, "percentile": 99, "source": "A+B" }
+  ],
+  "missing_metrics": ["Aerial volume", "Aerial success", "Loose ball recoveries", ...]
+}
+```
+
 
 # Compute Percentiles
 

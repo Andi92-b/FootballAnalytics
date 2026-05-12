@@ -5,6 +5,55 @@ All formulae match metric-definitions.md exactly. Do not deviate.
 """
 
 
+# Metrics that cannot be computed from currently available data sources.
+# These are skipped in percentile computation and surfaced in missing_metrics.
+PENDING_METRICS: frozenset[str] = frozenset({
+    # FBref passing table gone post-2026-01-20
+    "Loose ball recoveries",   # misc.Recov — removed from FBref
+    "Link-up play",            # passing.Short/Med.Att — passing table gone
+    "Progressive receptions",  # possession.PrgR/Rec — possession table gone
+    "Launched passes",         # passing.Long.Att/Total.Att — passing table gone
+    "Pass progression",        # passing.PrgP/Total.Att — passing table gone
+    # FBref misc aerial data gone post-2026-01-20
+    "Aerial volume",           # misc.Aerial_Won/Lost — removed from FBref
+    "Aerial success",          # misc.Aerial_Won% — removed from FBref
+    # FBref defense table gone post-2026-01-20
+    "Tackle success",          # defense.Challenges_Tkl% — defense table gone
+    "Back-foot defending",     # defense.Blocks.Sh + defense.Clr — defense table gone
+    "One-v-one defending",     # same as tackle_success — defense table gone
+    # FBref standard pass completion gone (no passing table)
+    "Ball retention",          # passing.Total_Cmp% — passing table gone
+})
+
+# Source tier for each metric:
+#   A          = FBref only
+#   A+B        = FBref + Understat
+#   A+C        = FBref + WhoScored
+#   C          = WhoScored only
+#   pending    = no available source in V1
+METRIC_SOURCES: dict[str, str] = {
+    "Front-foot defending":    "A",      # degraded: TklW+Fls+Int from FBref misc only
+    "Tackle success":          "pending", # defense table gone
+    "Back-foot defending":     "pending", # defense table gone
+    "Loose ball recoveries":   "pending", # misc.Recov gone
+    "Aerial volume":           "pending", # misc aerial data gone
+    "Aerial success":          "pending", # misc aerial data gone
+    "One-v-one defending":     "pending", # defense table gone
+    "Link-up play":            "pending", # passing table gone
+    "Ball retention":          "pending", # passing table gone
+    "Launched passes":         "pending", # passing table gone
+    "Creative threat":         "A+B",
+    "Cross volume":            "C",
+    "Dribble volume":          "C",
+    "Pass progression":        "pending", # passing table gone
+    "Carry progression":       "C",
+    "Progressive receptions":  "pending", # possession table gone
+    "Goal threat":             "A+B",
+    "Shot frequency":          "A+C",
+    "Box threat":              "C",
+    "Shot quality":            "A+B",
+}
+
 def _get(stats: dict, *keys: str, default: float = 0.0) -> float:
     """Return the first key found in stats, cast to float. Returns default if missing/NaN."""
     for key in keys:
@@ -22,7 +71,17 @@ def _get(stats: dict, *keys: str, default: float = 0.0) -> float:
 
 
 def _minutes(stats: dict) -> float:
-    return _get(stats, "standard.Playing Time_Min", "standard.Min", "standard.Playing_Time_Min", default=1.0) or 1.0
+    return _get(
+        stats,
+        "standard.Playing Time_Min", "standard.Min", "standard.Playing_Time_Min",
+        "standard.Playing Time_90s",
+        default=1.0,
+    ) or 1.0
+
+
+def _90s(stats: dict) -> float:
+    """Number of 90-minute periods played (can come from any table's 90s column)."""
+    return _get(stats, "standard.Playing Time_90s", "misc.90s", "shooting.90s", default=1.0) or 1.0
 
 
 def _per90(value: float, stats: dict) -> float:
@@ -38,13 +97,18 @@ def _poss_adj(value: float, stats: dict) -> float:
 # ── Defence ──────────────────────────────────────────────────────────────────
 
 def front_foot_defending(stats: dict) -> float:
-    """(Tkl + Challenges.Att + Fls + Int + Blocks.Pass) / 90 ÷ (1 – team_poss)"""
-    tkl = _get(stats, "defense.Tkl", "defense.Tackles_Tkl")
-    ch_att = _get(stats, "defense.Challenges_Att", "defense.Challenges.Att")
-    fls = _get(stats, "misc.Fls", "misc.Performance_Fls")
-    int_ = _get(stats, "defense.Int")
-    blk_pass = _get(stats, "defense.Blocks_Pass", "defense.Blocks.Pass")
-    raw = _per90(tkl + ch_att + fls + int_ + blk_pass, stats)
+    """(TklW + Fls + Int) / 90 ÷ (1 – team_poss)
+    Degraded Tier A: uses only FBref misc columns (TklW, Fls, Int).
+    Full Tier A+C will add Challenges.Att + Blocks.Pass from WhoScored when available.
+    """
+    # FBref misc (Tier A) — always available
+    tklw = _get(stats, "misc.Performance_TklW", "misc.TklW")
+    fls = _get(stats, "misc.Performance_Fls", "misc.Fls")
+    int_ = _get(stats, "misc.Performance_Int", "misc.Int")
+    # WhoScored (Tier C) — zero when stub active; add when available
+    ch_att = _get(stats, "whoscored.challenges_att", default=0.0)
+    blk_pass = _get(stats, "whoscored.blocked_passes", default=0.0)
+    raw = _per90(tklw + fls + int_ + ch_att + blk_pass, stats)
     return _poss_adj(raw, stats)
 
 
@@ -54,9 +118,11 @@ def tackle_success(stats: dict) -> float:
 
 
 def back_foot_defending(stats: dict) -> float:
-    """(Blocks.Sh + Clr) / 90 ÷ (1 – team_poss)"""
-    blk_sh = _get(stats, "defense.Blocks_Sh", "defense.Blocks.Sh")
-    clr = _get(stats, "defense.Clr")
+    """(blocked_shots[WhoScored] + Clr[FBref]) / 90 ÷ (1 – team_poss)
+    Tier A+C: WhoScored for blocked shots; FBref misc for clearances.
+    """
+    blk_sh = _get(stats, "whoscored.blocked_shots")
+    clr = _get(stats, "misc.Clr", "misc.Performance_Clr", "defense.Clr")
     raw = _per90(blk_sh + clr, stats)
     return _poss_adj(raw, stats)
 
@@ -109,25 +175,23 @@ def launched_passes(stats: dict) -> float:
 # ── Progression ──────────────────────────────────────────────────────────────
 
 def creative_threat(stats: dict) -> float:
-    """(0.8 × xAG + 0.2 × Ast) / 90"""
-    xag = _get(stats, "passing.xAG", "standard.xAG")
-    ast = _get(stats, "standard.Ast")
-    return _per90(0.8 * xag + 0.2 * ast, stats)
+    """(0.8 × xA[Understat] + 0.2 × Ast[FBref]) / 90  — Tier A+B"""
+    xa = _get(stats, "understat.xA")
+    ast = _get(stats, "standard.Performance_Ast", "standard.Ast")
+    return _per90(0.8 * xa + 0.2 * ast, stats)
 
 
 def cross_volume(stats: dict) -> float:
-    """Crs / (Att3rd_touches / 100)"""
-    crs = _get(stats, "passing_types.Crs")
-    att3rd = _get(stats, "possession.Touches_Att3rd", "possession.Touches.Att3rd")
+    """Crs[WhoScored] / (Att3rd_touches[WhoScored] / 100)  — Tier C"""
+    crs = _get(stats, "whoscored.crosses")
+    att3rd = _get(stats, "whoscored.att3rd")
     return crs / (att3rd / 100) if att3rd > 0 else 0.0
 
 
 def dribble_volume(stats: dict) -> float:
-    """Dribbles.Att / (Touches / 100)"""
-    drb = _get(stats,
-               "possession.Dribbles_Att", "possession.Take-Ons_Att",
-               "possession.Dribbles.Att")
-    touches = _get(stats, "possession.Touches", "possession.Touches_Touches")
+    """Dribbles.Att[WhoScored] / (Touches[WhoScored] / 100)  — Tier C"""
+    drb = _get(stats, "whoscored.dribbles_att")
+    touches = _get(stats, "whoscored.touches")
     return drb / (touches / 100) if touches > 0 else 0.0
 
 
@@ -139,10 +203,11 @@ def pass_progression(stats: dict) -> float:
 
 
 def carry_progression(stats: dict) -> float:
-    """PrgC / Carries"""
-    prgc = _get(stats, "possession.PrgC", "possession.Carries_PrgC")
-    carries = _get(stats, "possession.Carries", "possession.Carries_Carries")
-    return prgc / carries if carries > 0 else 0.0
+    """PrgC_proxy[WhoScored] / Carries[WhoScored]  — Tier C"""
+    carries = _get(stats, "whoscored.carries")
+    # proxy: 30% of carries assumed progressive until WhoScored provides split
+    prgc_proxy = carries * 0.30
+    return prgc_proxy / carries if carries > 0 else 0.0
 
 
 def progressive_receptions(stats: dict) -> float:
@@ -155,32 +220,34 @@ def progressive_receptions(stats: dict) -> float:
 # ── Attack ───────────────────────────────────────────────────────────────────
 
 def goal_threat(stats: dict) -> float:
-    """(0.7 × npxG + 0.3 × (Gls – PK)) / 90"""
-    npxg = _get(stats, "shooting.npxG", "shooting.Expected_npxG")
-    gls = _get(stats, "standard.Gls")
-    pk = _get(stats, "standard.PK")
+    """(0.7 × npxG[Understat] + 0.3 × (Gls – PK)[FBref]) / 90  — Tier A+B"""
+    npxg = _get(stats, "understat.npxG")
+    gls = _get(stats, "standard.Performance_Gls", "standard.Gls")
+    pk = _get(stats, "standard.Performance_PK", "standard.PK")
     return _per90(0.7 * npxg + 0.3 * (gls - pk), stats)
 
 
 def shot_frequency(stats: dict) -> float:
-    """Sh / (Touches / 100)"""
-    sh = _get(stats, "shooting.Sh", "shooting.Standard_Sh")
-    touches = _get(stats, "possession.Touches", "possession.Touches_Touches")
+    """Sh[FBref] / (Touches[WhoScored] / 100)  — Tier A+C"""
+    sh = _get(stats, "shooting.Standard_Sh", "shooting.Sh")
+    touches = _get(stats, "whoscored.touches")
     return sh / (touches / 100) if touches > 0 else 0.0
 
 
 def box_threat(stats: dict) -> float:
-    """AttPen_touches / (Mid3rd_touches + Att3rd_touches)"""
-    att_pen = _get(stats, "possession.Touches_AttPen", "possession.Touches.AttPen")
-    mid3rd = _get(stats, "possession.Touches_Mid3rd", "possession.Touches.Mid3rd")
-    att3rd = _get(stats, "possession.Touches_Att3rd", "possession.Touches.Att3rd")
+    """AttPen_touches[WhoScored] / (Mid3rd + Att3rd)[WhoScored]  — Tier C"""
+    att_pen = _get(stats, "whoscored.attpen")
+    mid3rd = _get(stats, "whoscored.mid3rd")
+    att3rd = _get(stats, "whoscored.att3rd")
     denom = mid3rd + att3rd
     return att_pen / denom if denom > 0 else 0.0
 
 
 def shot_quality(stats: dict) -> float:
-    """npxG/Sh (pre-computed by FBref)"""
-    return _get(stats, "shooting.npxG/Sh", "shooting.Expected_npxG/Sh")
+    """npxG[Understat] / Sh[FBref]  — Tier A+B"""
+    npxg = _get(stats, "understat.npxG")
+    sh = _get(stats, "shooting.Standard_Sh", "shooting.Sh", default=1.0) or 1.0
+    return npxg / sh
 
 
 # ── Dispatch table ────────────────────────────────────────────────────────────

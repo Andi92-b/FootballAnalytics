@@ -9,6 +9,7 @@ class MetricResult(BaseModel):
     category: str
     raw: float
     percentile: int
+    source: str = "fbref"
 
 
 class PlayerResponse(BaseModel):
@@ -16,6 +17,9 @@ class PlayerResponse(BaseModel):
     position: str
     season: str
     league: str
+    data_sources: list[str] = []
+    missing_metrics: list[str] = []
+    data_freshness: dict[str, str] = {}
     metrics: list[MetricResult]
     svg: str
 
@@ -41,8 +45,14 @@ async def get_player(
         position=pizza_data.position,
         season=pizza_data.season,
         league=pizza_data.league,
+        data_sources=pizza_data.data_sources,
+        missing_metrics=pizza_data.missing_metrics,
+        data_freshness=pizza_data.data_freshness,
         metrics=[
-            MetricResult(name=m.name, category=m.category, raw=m.raw, percentile=m.percentile)
+            MetricResult(
+                name=m.name, category=m.category,
+                raw=m.raw, percentile=m.percentile, source=m.source,
+            )
             for m in pizza_data.metrics
         ],
         svg=svg,

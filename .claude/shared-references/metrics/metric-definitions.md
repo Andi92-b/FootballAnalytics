@@ -5,20 +5,35 @@ Source of truth for all 17 metrics used in the pizza chart system.
 
 ---
 
+## Data Source Tiers (post-2026-01-20)
+
+| Tier | Symbol | Source | Coverage |
+|------|--------|--------|----------|
+| A | `A` | FBref (standard + shooting + misc) | All leagues |
+| B | `A+B` | FBref + Understat (npxG, xA) | Big-5 only (EPL, La Liga, Bundesliga, Serie A, Ligue 1) |
+| C | `C`, `A+C` | WhoScored (stub in V1) | Pending |
+| Pending | `pending` | Data gone / no open source yet | — |
+
+Metrics with tier `pending` are always in `missing_metrics`. Tier `A+B` metrics require Understat coverage.
+Tier `C`/`A+C` metrics require WhoScored (degraded mode in V1 — always missing_metrics too).
+
+---
+
 ## Defence (7 metrics)
 
 ### 1. Front-foot defending
 
 | Field | Value |
 |-------|-------|
-| **FBref table(s)** | `defense`, `misc` |
-| **Formula** | `(Tkl + Challenges.Att + Fls + Int + Blocks.Pass) / 90 ÷ (1 – team_poss)` |
+| **Tier** | `A` |
+| **FBref table(s)** | `misc` |
+| **Formula** | `(misc.Performance_TklW + misc.Performance_Fls + misc.Performance_Int) / 90 ÷ (1 – team_poss)` |
 | **Possession-adjusted** | Yes — divide by `(1 – team_poss)` to control for how often the player's team is off the ball |
-| **High score means** | Player is very active in pressing, tackling challenges, intercepting, and blocking passes when their team doesn't have the ball |
+| **High score means** | Player is very active in pressing, tackling challenges, intercepting when their team doesn't have the ball |
 | **Low score means** | Passive defensively; rarely engages when out of possession |
 
-**Columns:** `defense.Tkl`, `defense.Challenges.Att`, `misc.Fls`, `defense.Int`, `defense.Blocks.Pass`
-**team_poss:** `team_stats.Poss` (as a decimal, e.g. 0.55 for 55%)
+**Note:** Formerly used `defense.Tkl`, `defense.Challenges.Att`, `defense.Blocks.Pass` — these are gone post-2026-01-20.
+Now uses misc table only: `misc.Performance_TklW`, `misc.Performance_Fls`, `misc.Performance_Int`.
 
 ---
 
@@ -26,13 +41,9 @@ Source of truth for all 17 metrics used in the pizza chart system.
 
 | Field | Value |
 |-------|-------|
-| **FBref table(s)** | `defense` |
-| **Formula** | `Challenges.Tkl%` (pre-computed by FBref) |
-| **Possession-adjusted** | No |
-| **High score means** | Player wins a high proportion of the tackles they attempt |
-| **Low score means** | Often dives in and loses the ball; poor tackle timing |
-
-**Columns:** `defense.Challenges.Tkl%`
+| **Tier** | `pending` |
+| **Former source** | `defense.Challenges.Tkl%` |
+| **Status** | FBref defense table gone. No open source replacement yet. |
 
 ---
 
@@ -40,13 +51,9 @@ Source of truth for all 17 metrics used in the pizza chart system.
 
 | Field | Value |
 |-------|-------|
-| **FBref table(s)** | `defense` |
-| **Formula** | `(Blocks.Sh + Clr) / 90 ÷ (1 – team_poss)` |
-| **Possession-adjusted** | Yes |
-| **High score means** | Player frequently blocks shots and clears the ball in last-ditch defensive actions |
-| **Low score means** | Rarely in position to block shots or produce clearances |
-
-**Columns:** `defense.Blocks.Sh`, `defense.Clr`
+| **Tier** | `pending` |
+| **Former source** | `defense.Blocks.Sh`, `defense.Clr` |
+| **Status** | FBref defense table gone. No open source replacement yet. |
 
 ---
 
@@ -54,13 +61,9 @@ Source of truth for all 17 metrics used in the pizza chart system.
 
 | Field | Value |
 |-------|-------|
-| **FBref table(s)** | `misc` |
-| **Formula** | `Recov / 90` |
-| **Possession-adjusted** | No |
-| **High score means** | Player is excellent at winning second balls and contested possessions |
-| **Low score means** | Rarely involved in loose ball situations |
-
-**Columns:** `misc.Recov`
+| **Tier** | `pending` |
+| **Former source** | `misc.Recov` |
+| **Status** | FBref misc table no longer includes Recov column post-2026-01-20. |
 
 ---
 
@@ -68,15 +71,12 @@ Source of truth for all 17 metrics used in the pizza chart system.
 
 | Field | Value |
 |-------|-------|
-| **FBref table(s)** | `misc` |
-| **Formula** | `(Aerial.Won + Aerial.Lost) / 90` |
-| **Possession-adjusted** | No |
-| **High score means** | Player contests many aerial duels; physically dominant in the air |
-| **Low score means** | Avoids aerial contests; ground-based player |
-
-**Columns:** `misc.Aerial.Won`, `misc.Aerial.Lost`
+| **Tier** | `pending` |
+| **Former source** | `misc.Aerial.Won`, `misc.Aerial.Lost` |
+| **Status** | FBref misc table no longer includes aerial breakdown post-2026-01-20. |
 
 ---
+
 
 ### 6. Aerial success
 

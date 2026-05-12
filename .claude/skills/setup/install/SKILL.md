@@ -47,7 +47,11 @@ Confirm `football_core` is importable.
 ## Step 4 — Install backend dependencies
 
 Install backend `pyproject.toml` dependencies into the venv.
-Confirm `fastapi`, `uvicorn`, `soccerdata`, `mplsoccer`, `scipy` are importable.
+Confirm `fastapi`, `uvicorn`, `soccerdata`, `mplsoccer`, `scipy`, `aiohttp` are importable.
+
+**Note on optional Tier B/C dependencies:**
+- `understat` library: **not installable on Python 3.13** (aiohttp build failure). The pipeline uses direct `aiohttp` HTTP calls to Understat's API instead — no `pip install understat` needed.
+- `selenium` + `undetected-chromedriver`: optional, for WhoScored Tier C. Install only when promoting the WhoScored stub: `pip install selenium undetected-chromedriver`. Not needed in V1.
 
 ---
 
