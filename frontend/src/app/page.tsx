@@ -16,6 +16,21 @@ export default function Home() {
   const [fbrefUrl, setFbrefUrl] = useState("");
   const [season, setSeason] = useState("2024");
   const [league, setLeague] = useState("ENG-Premier League");
+
+  const LEAGUES = [
+    { group: "Domestic", options: [
+      { value: "ENG-Premier League", label: "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League" },
+      { value: "ESP-La Liga",        label: "🇪🇸 La Liga" },
+      { value: "GER-Bundesliga",     label: "🇩🇪 Bundesliga" },
+      { value: "ITA-Serie A",        label: "🇮🇹 Serie A" },
+      { value: "FRA-Ligue 1",        label: "🇫🇷 Ligue 1" },
+    ]},
+    { group: "International", options: [
+      { value: "INT-World Cup",              label: "🌍 World Cup" },
+      { value: "INT-European Championship",  label: "🇪🇺 European Championship" },
+      { value: "INT-Women's World Cup",      label: "🌍 Women's World Cup" },
+    ]},
+  ];
   const [data, setData] = useState<PlayerData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +89,19 @@ export default function Home() {
           placeholder="https://fbref.com/en/players/e46012d0/Virgil-van-Dijk"
           className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
+        <select
+          value={league}
+          onChange={(e) => setLeague(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+          {LEAGUES.map((g) => (
+            <optgroup key={g.group} label={g.group}>
+              {g.options.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
         <input
           type="number"
           value={season}
