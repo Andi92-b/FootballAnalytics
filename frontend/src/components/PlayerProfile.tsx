@@ -176,13 +176,25 @@ function StatRow({ statKey, entry }: { statKey: string; entry: StatEntry }) {
   );
 }
 
-export function PlayerProfile() {
+export function PlayerProfile({
+  playerName,
+  season,
+  league,
+}: {
+  playerName: string;
+  season: number;
+  league: string;
+}) {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/player/Luis%20Diaz/profile")
+    setLoading(true);
+    setError(null);
+    setData(null);
+    const url = `http://localhost:8000/api/player/${encodeURIComponent(playerName)}/profile?season=${season}&league=${encodeURIComponent(league)}`;
+    fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -190,7 +202,7 @@ export function PlayerProfile() {
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [playerName, season, league]);
 
   if (loading) return <p className="text-gray-400 text-sm">Loading profile…</p>;
   if (error)   return <p className="text-red-500 text-sm">Error: {error}</p>;
@@ -209,34 +221,27 @@ export function PlayerProfile() {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">{data.display_name}</h2>
-          <p className="text-gray-500 text-sm mt-0.5">{data.position} · {data.team}</p>
+      {/* Sources bar */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex gap-1 flex-wrap">
+          {activeSources.map((src) => (
+            <span
+              key={src}
+              className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                data.available_sources.includes(src)
+                  ? SOURCE_COLORS[src]
+                  : "bg-gray-100 text-gray-400 line-through"
+              }`}
+            >
+              {SOURCE_LABELS[src]}
+            </span>
+          ))}
         </div>
-        <div className="flex flex-col gap-1 items-end">
-          <p className="text-xs text-gray-400 mb-1">Data sources</p>
-          <div className="flex gap-1 flex-wrap justify-end">
-            {activeSources.map((src) => (
-              <span
-                key={src}
-                className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                  data.available_sources.includes(src)
-                    ? SOURCE_COLORS[src]
-                    : "bg-gray-100 text-gray-400 line-through"
-                }`}
-              >
-                {SOURCE_LABELS[src]}
-              </span>
-            ))}
-          </div>
-          {Object.keys(data.errors).length > 0 && (
-            <p className="text-xs text-gray-400 mt-1">
-              Unavailable: {Object.keys(data.errors).filter(k => data.errors[k] !== "returned None (no data or not found)" || !data.available_sources.includes(k)).join(", ")}
-            </p>
-          )}
-        </div>
+        {Object.keys(data.errors).filter(k => !data.available_sources.includes(k)).length > 0 && (
+          <p className="text-xs text-gray-400">
+            Unavailable: {Object.keys(data.errors).filter(k => !data.available_sources.includes(k)).join(", ")}
+          </p>
+        )}
       </div>
 
       {/* Stat tables by category */}

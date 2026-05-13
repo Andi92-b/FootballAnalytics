@@ -123,8 +123,14 @@ def fetch_profile(
     registry: dict,
     cache_dir: Path,
     force_refresh: bool = False,
+    season: int | None = None,
+    league: str | None = None,
 ) -> ProfileResult:
-    """Fetch all 5 sources for a player concurrently and return a ProfileResult."""
+    """Fetch all 5 sources for a player concurrently and return a ProfileResult.
+
+    If ``season`` and ``league`` are provided they override the registry defaults,
+    so the dashboard data matches whatever season is displayed in the pizza chart.
+    """
     # Normalise lookup
     key = next(
         (k for k in registry if k.lower() == player_name.lower()),
@@ -139,7 +145,26 @@ def fetch_profile(
     if key is None:
         raise KeyError(f"Player '{player_name}' not found in registry. Available: {list(registry.keys())}")
 
-    entry = registry[key]
+    entry = dict(registry[key])  # shallow copy so we can override without mutating registry
+
+    # Apply season/league overrides when requested
+    if season is not None and league is not None:
+        from football_core.sources.sofascore import (
+            SOFASCORE_TOURNAMENT_IDS,
+            SOFASCORE_SEASON_IDS,
+        )
+        entry["fbref_league"] = league
+        entry["fbref_season"] = season
+        entry["understat_league"] = league
+        entry["understat_season"] = season
+        # Resolve Sofascore tournament + season IDs for the requested league/season
+        tid = SOFASCORE_TOURNAMENT_IDS.get(league)
+        sid = SOFASCORE_SEASON_IDS.get((league, season))
+        if tid is not None:
+            entry["sofascore_tournament_id"] = tid
+        if sid is not None:
+            entry["sofascore_season_id"] = sid
+
     result = ProfileResult(
         player=key,
         display_name=entry.get("display_name", key),

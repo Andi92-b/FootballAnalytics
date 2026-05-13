@@ -235,14 +235,18 @@ def _merge_stats(result: ProfileResult) -> dict[str, StatEntry]:
 # ---------------------------------------------------------------------------
 
 @router.get("/{name}/profile", response_model=ProfileResponse)
-def get_player_profile(name: str) -> ProfileResponse:
+def get_player_profile(
+    name: str,
+    season: int | None = None,
+    league: str | None = None,
+) -> ProfileResponse:
     try:
         registry = _load_registry()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not load player registry: {exc}")
 
     try:
-        result = fetch_profile(name, registry, _CACHE_DIR)
+        result = fetch_profile(name, registry, _CACHE_DIR, season=season, league=league)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

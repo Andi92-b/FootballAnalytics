@@ -35,6 +35,7 @@ export default function Home() {
   const [nameInput, setNameInput] = useState("");
   const [playerInfo, setPlayerInfo] = useState<PlayerSeasonsInfo | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
   const [data, setData] = useState<PlayerData | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingChart, setIsLoadingChart] = useState(false);
@@ -70,6 +71,7 @@ export default function Home() {
 
   async function loadSeason(info: PlayerSeasonsInfo, season: number, league: string) {
     setSelectedSeason(season);
+    setSelectedLeague(league);
     setIsLoadingChart(true);
     setError(null);
     try {
@@ -163,14 +165,29 @@ export default function Home() {
       />
 
       {/* ── Stats Dashboard ── */}
-      <hr className="w-full max-w-3xl border-gray-200 my-12" />
-      <section className="w-full max-w-3xl">
-        <h2 className="text-xl font-semibold text-gray-800 mb-6">
-          Player Stats Dashboard
-          <span className="ml-2 text-sm font-normal text-gray-400">— Luis Díaz · Bayern München</span>
-        </h2>
-        <PlayerProfile />
-      </section>
+      {playerInfo && selectedSeason && selectedLeague && (
+        <>
+          <hr className="w-full max-w-3xl border-gray-200 my-12" />
+          <section className="w-full max-w-3xl">
+            <h2 className="text-xl font-semibold text-gray-800 mb-1">
+              Player Stats Dashboard
+            </h2>
+            <p className="text-sm text-gray-400 mb-6">
+              Raw scraped data for{" "}
+              <span className="font-medium text-gray-600">{playerInfo.display_name}</span>
+              {" · "}
+              <span className="font-medium text-gray-600">{seasonLabel(selectedSeason)}</span>
+              {" · "}
+              <span className="text-gray-500">{selectedLeague.replace(/^[A-Z]+-/, "")}</span>
+            </p>
+            <PlayerProfile
+              playerName={playerInfo.player}
+              season={selectedSeason}
+              league={selectedLeague}
+            />
+          </section>
+        </>
+      )}
     </main>
   );
 }
