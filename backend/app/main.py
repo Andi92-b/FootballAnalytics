@@ -3,8 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.routers import player, profile
+from backend import db as player_db
 
 app = FastAPI(title="Football Analytics API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    player_db.init_db()
 
 app.add_middleware(
     CORSMiddleware,

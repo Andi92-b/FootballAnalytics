@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PizzaChart, MetricResult } from "@/components/PizzaChart";
 import { PlayerProfile } from "@/components/PlayerProfile";
 import { MetricLeaderboard, PeerRoster, type PeerEntry } from "@/components/PeerPanel";
@@ -30,8 +30,28 @@ interface PlayerData {
   peers: PeerEntry[];
 }
 
+interface SearchSuggestion {
+  name: string;
+  team: string;
+  league: string;
+  position: string;
+  season: number;
+  minutes: number;
+}
+
 function seasonLabel(year: number): string {
   return `${year}/${String(year + 1).slice(2)}`;
+}
+
+function leagueShort(league: string): string {
+  const map: Record<string, string> = {
+    "ENG-Premier League": "PL",
+    "GER-Bundesliga": "BL",
+    "ESP-La Liga": "LL",
+    "ITA-Serie A": "SA",
+    "FRA-Ligue 1": "L1",
+  };
+  return map[league] ?? league.replace(/^[A-Z]+-/, "");
 }
 
 export default function Home() {
@@ -45,10 +65,58 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    const name = nameInput.trim();
-    if (!name) return;
+  // Autocomplete
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIdx, setHighlightedIdx] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch suggestions on input change (debounced 250ms)
+  useEffect(() => {
+    const q = nameInput.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API}/api/players/search?q=${encodeURIComponent(q)}&limit=8`);
+        if (res.ok) {
+          const data: SearchSuggestion[] = await res.json();
+          setSuggestions(data);
+          setShowSuggestions(data.length > 0);
+          setHighlightedIdx(-1);
+        }
+      } catch {
+        // search failure is non-critical
+      }
+    }, 250);
+  }, [nameInput]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function selectSuggestion(s: SearchSuggestion) {
+    setNameInput(s.name);
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setHighlightedIdx(-1);
+    triggerSearch(s.name);
+  }
+
+  async function triggerSearch(name: string) {
+    if (!name.trim()) return;
     setIsSearching(true);
     setError(null);
     setPlayerInfo(null);
@@ -63,13 +131,34 @@ export default function Home() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const info: PlayerSeasonsInfo = await res.json();
       setPlayerInfo(info);
-      // Auto-load the most recent season
       const latest = info.seasons_info[info.seasons_info.length - 1];
       await loadSeason(info, latest.season, latest.league);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsSearching(false);
+    }
+  }
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setShowSuggestions(false);
+    await triggerSearch(nameInput.trim());
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIdx((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" && highlightedIdx >= 0) {
+      e.preventDefault();
+      selectSuggestion(suggestions[highlightedIdx]);
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
     }
   }
 
@@ -104,23 +193,48 @@ export default function Home() {
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Football Analytics</h1>
       <p className="text-gray-500 mb-8">Position-specific pizza charts from multi-source data</p>
 
-      {/* ── Search form ── */}
-      <form onSubmit={handleSearch} className="flex gap-2 w-full max-w-lg mb-4">
-        <input
-          type="text"
-          value={nameInput}
-          onChange={(e) => setNameInput(e.target.value)}
-          placeholder="Player name, e.g. Luis Diaz"
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="bg-blue-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
-          {isSearching ? "Searching…" : "Search"}
-        </button>
-      </form>
+      {/* ── Search form with autocomplete ── */}
+      <div ref={searchContainerRef} className="relative w-full max-w-lg mb-4">
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <input
+            type="text"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            placeholder="Search player, e.g. Anthony Gordon"
+            autoComplete="off"
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="bg-blue-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSearching ? "Searching…" : "Search"}
+          </button>
+        </form>
+
+        {/* Dropdown */}
+        {showSuggestions && (
+          <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+            {suggestions.map((s, i) => (
+              <li
+                key={`${s.name}-${s.league}`}
+                onMouseDown={() => selectSuggestion(s)}
+                className={`px-4 py-2.5 cursor-pointer flex items-center justify-between gap-3 ${
+                  i === highlightedIdx ? "bg-blue-50" : "hover:bg-gray-50"
+                }`}
+              >
+                <span className="font-medium text-sm text-gray-900 truncate">{s.name}</span>
+                <span className="text-xs text-gray-400 shrink-0">
+                  {s.team} · {leagueShort(s.league)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* ── Season dropdown (appears after search) ── */}
       {playerInfo && (
