@@ -247,8 +247,34 @@ def get_player_profile(
 
     try:
         result = fetch_profile(name, registry, _CACHE_DIR, season=season, league=league)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except KeyError:
+        # Player not in registry — try DB fallback (FBref-only profile)
+        from backend import db as player_db
+        db_entry = player_db.get_player_entry(name)
+        if db_entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Player '{name}' not found. Use /api/players/search?q=... to find players.",
+            )
+        # Build minimal entry for FBref + Understat fetchers
+        fb_league = league or db_entry["league"]
+        fb_season = season or db_entry["season"]
+        fallback = {
+            "display_name": db_entry["name"],
+            "name": db_entry["name"],
+            "team": db_entry["team"] or "",
+            "position": db_entry["position"] or "",
+            "fbref_league": fb_league,
+            "fbref_season": fb_season,
+            "understat_league": fb_league,
+            "understat_season": fb_season,
+            "understat_name": db_entry["name"],
+        }
+        result = fetch_profile(
+            name, registry, _CACHE_DIR,
+            season=fb_season, league=fb_league,
+            fallback_entry=fallback,
+        )
 
     merged = _merge_stats(result)
 

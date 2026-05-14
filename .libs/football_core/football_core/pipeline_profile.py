@@ -118,6 +118,15 @@ _FETCHERS = {
 }
 
 
+# Fetchers that require rich registry IDs (Sofascore player ID etc.)
+_REGISTRY_ONLY_FETCHERS: frozenset[str] = frozenset({"sofascore", "footystats", "ovo"})
+
+# Big-5 leagues supported by Understat
+_UNDERSTAT_LEAGUES: frozenset[str] = frozenset({
+    "ENG-Premier League", "GER-Bundesliga", "ESP-La Liga", "ITA-Serie A", "FRA-Ligue 1",
+})
+
+
 def fetch_profile(
     player_name: str,
     registry: dict,
@@ -125,13 +134,16 @@ def fetch_profile(
     force_refresh: bool = False,
     season: int | None = None,
     league: str | None = None,
+    fallback_entry: dict | None = None,
 ) -> ProfileResult:
-    """Fetch all 5 sources for a player concurrently and return a ProfileResult.
+    """Fetch sources for a player and return a ProfileResult.
 
-    If ``season`` and ``league`` are provided they override the registry defaults,
-    so the dashboard data matches whatever season is displayed in the pizza chart.
+    Registry players get all 5 sources (Sofascore, Understat, FBref, FootyStats, OVO).
+    Non-registry players (``fallback_entry`` provided) get FBref + Understat only.
+
+    If ``season`` and ``league`` are provided they override the registry defaults.
     """
-    # Normalise lookup
+    # ── Registry lookup ───────────────────────────────────────────────────────
     key = next(
         (k for k in registry if k.lower() == player_name.lower()),
         None,
@@ -142,10 +154,23 @@ def fetch_profile(
             (k for k in registry if player_name.lower() in k.lower() or k.lower() in player_name.lower()),
             None,
         )
-    if key is None:
+
+    if key is None and fallback_entry is None:
         raise KeyError(f"Player '{player_name}' not found in registry. Available: {list(registry.keys())}")
 
-    entry = dict(registry[key])  # shallow copy so we can override without mutating registry
+    if key is not None:
+        entry = dict(registry[key])  # shallow copy
+        active_fetchers = _FETCHERS
+    else:
+        # Non-registry player — use the fallback entry, run only FBref + Understat
+        entry = dict(fallback_entry)  # type: ignore[arg-type]
+        key = player_name
+        # Only run Understat for Big-5 leagues
+        usable = {"fbref"}
+        lg = entry.get("fbref_league", "")
+        if lg in _UNDERSTAT_LEAGUES:
+            usable.add("understat")
+        active_fetchers = {k: v for k, v in _FETCHERS.items() if k in usable}
 
     # Apply season/league overrides when requested
     if season is not None and league is not None:
@@ -169,14 +194,14 @@ def fetch_profile(
         player=key,
         display_name=entry.get("display_name", key),
         position=entry.get("position", ""),
-        team=entry.get("current_team", ""),
+        team=entry.get("current_team", entry.get("team", "")),
     )
 
-    # Run all fetchers in a thread pool (they are blocking I/O)
+    # Run fetchers in a thread pool (they are blocking I/O)
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {
             source: pool.submit(fn, entry, cache_dir)
-            for source, fn in _FETCHERS.items()
+            for source, fn in active_fetchers.items()
         }
         for source, future in futures.items():
             try:
