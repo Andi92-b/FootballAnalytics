@@ -15,6 +15,14 @@ class MetricResult(BaseModel):
     source: str = "fbref"  # e.g. "fbref", "fbref+understat", "whoscored", "pending"
 
 
+class PeerEntry(BaseModel):
+    name: str
+    team: str
+    position: str       # raw FBref position string, e.g. "MF,FW"
+    minutes: int
+    metric_values: dict[str, float]  # metric_name → raw value
+
+
 class PositionProfile(BaseModel):
     position_bucket: str
     fbref_string: str
@@ -31,3 +39,4 @@ class PizzaData(BaseModel):
     data_sources: list[str] = []
     data_freshness: dict[str, str] = {}
     svg: str | None = None
+    peers: list[PeerEntry] = []

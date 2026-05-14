@@ -15,6 +15,13 @@ class MetricResult(BaseModel):
     percentile: int
     source: str = "fbref"
 
+class PeerEntry(BaseModel):
+    name: str
+    team: str
+    position: str
+    minutes: int
+    metric_values: dict[str, float]
+
 
 class PlayerResponse(BaseModel):
     player: str
@@ -26,6 +33,7 @@ class PlayerResponse(BaseModel):
     data_freshness: dict[str, str] = {}
     metrics: list[MetricResult]
     svg: str
+    peers: list[PeerEntry] = []
 
 
 class PlayerSeasonsResponse(BaseModel):
@@ -130,4 +138,11 @@ async def get_player(
             for m in pizza_data.metrics
         ],
         svg=svg,
+        peers=[
+            PeerEntry(
+                name=p.name, team=p.team, position=p.position,
+                minutes=p.minutes, metric_values=p.metric_values,
+            )
+            for p in pizza_data.peers
+        ],
     )

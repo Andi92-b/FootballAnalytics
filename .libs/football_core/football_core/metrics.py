@@ -7,36 +7,11 @@ All formulae match metric-definitions.md exactly. Do not deviate.
 
 # Metrics that cannot be computed from currently available data sources.
 # These are skipped in percentile computation and surfaced in missing_metrics.
-#
-# Peer comparison requires the SAME metric to be computable for all league players.
-# Sofascore/OVO data is only available for registry players (not the full league),
-# so any metric whose formula ONLY works with Sofascore/OVO keys must stay pending
-# until we have league-wide Sofascore data.
-#
-# Exceptions: cross_volume and shot_frequency use FBref columns as fallback for peers
-# (misc.Performance_Crs and shooting.Standard_Sh), so those CAN be percentile-ranked.
-# Metrics that have been REMOVED from FBref (Jan 2026 data change) or never had
-# FBref peer-group equivalents. These are excluded from position matrices entirely.
-# Kept here only for reference.
-_UNAVAILABLE_METRICS: frozenset[str] = frozenset({
-    # FBref tables removed in Jan 2026 — no replacement possible from standard/shooting/misc
-    "Back-foot defending",     # defense.Blocks.Sh — table gone
-    "One-v-one defending",     # same — table gone
-    "Progressive receptions",  # possession.PrgR — table gone
-    "Loose ball recoveries",   # misc.Recov — removed from misc table
-    "Launched passes",         # passing.Long.Att — table gone
-    "Link-up play",            # needs own/opp-half pass split — not in standard/misc
-    "Ball retention",          # pass accuracy — passing table gone
-    "Pass progression",        # passes to opp box — no FBref fallback for peers
-    "Carry progression",       # PrgC removed from standard table
-    # Previously unavailable, now unlocked via Sofascore league stats:
-    # "Tackle success", "Aerial volume", "Aerial success", "Dribble volume", "Ball recovery"
-})
-
-# Metrics still in position matrices but temporarily uncomputable.
 PENDING_METRICS: frozenset[str] = frozenset({
-    # Sofascore-only, no FBref fallback for peer group
-    "Box threat",
+    # FBref tables removed in Jan 2026; no Sofascore equivalent exists:
+    "Carry progression",       # progressive carries — no SC field
+    "Progressive receptions",  # progressive passes received — no SC field
+    "Loose ball recoveries",   # legacy name; replaced by Ball recovery
 })
 
 # Source tier for each metric:
@@ -46,21 +21,29 @@ PENDING_METRICS: frozenset[str] = frozenset({
 #   C          = WhoScored only
 #   pending    = no available source in V1
 METRIC_SOURCES: dict[str, str] = {
-    "Front-foot defending":    "A",    # FBref misc TklW+Fls+Int
-    "Creative threat":         "A+B",  # Understat xA + FBref Ast
-    "Cross volume":            "A+SC", # sofascore.totalCross OR misc.Crs for peers
-    "Goal threat":             "A+B",  # Understat npxG + FBref goals
-    "Shot frequency":          "A+SC", # sofascore.totalShots OR shooting.Sh for peers
-    "Shot quality":            "A+B",  # Understat npxG / shots
-    "Shot accuracy":           "A",    # FBref shooting.SoT%
-    "Foul drawing":            "A",    # FBref misc.Fld
-    "Runs in behind":          "A",    # FBref misc.Off/90
-    "Tackle success":          "SC",   # sofascore.tacklesWonPercentage (league-wide)
-    "Aerial volume":           "SC",   # sofascore.(aerialDuelsWon+aerialLost)/90
-    "Aerial success":          "SC",   # sofascore.aerialDuelsWonPercentage
-    "Dribble volume":          "SC",   # sofascore.successfulDribbles/90
-    "Ball recovery":           "SC",   # sofascore.ballRecovery/90
-    "Box threat":              "SC",   # Sofascore target only; pending for peer group
+    "Front-foot defending":    "A",     # FBref misc TklW+Fls+Int
+    "Creative threat":         "A+B",   # Understat xA + FBref Ast
+    "Cross volume":            "A+SC",  # sofascore.totalCross OR misc.Crs for peers
+    "Goal threat":             "A+B",   # Understat npxG + FBref goals
+    "Shot frequency":          "SC",    # sofascore.totalShots / touches per 100
+    "Shot quality":            "A+B",   # Understat npxG / shots
+    "Shot accuracy":           "A",     # FBref shooting.SoT%
+    "Foul drawing":            "A",     # FBref misc.Fld
+    "Runs in behind":          "A",     # FBref misc.Off/90
+    "Tackle success":          "SC",    # sofascore.tacklesWonPercentage
+    "Aerial volume":           "SC",    # sofascore.(aerialDuelsWon+aerialLost)/90
+    "Aerial success":          "SC",    # sofascore.aerialDuelsWonPercentage
+    "Dribble volume":          "SC",    # sofascore.successfulDribbles / touches per 100
+    "Ball recovery":           "SC",    # sofascore.ballRecovery/90
+    "Back-foot defending":     "SC",    # sofascore.(clearances+blockedShots)/90
+    "One-v-one defending":     "SC",    # sofascore.(totalContest-dribbledPast)/totalContest
+    "Ball retention":          "SC",    # sofascore.accuratePassesPercentage
+    "Launched passes":         "SC",    # sofascore.totalLongBalls/totalPasses
+    "Link-up play":            "SC",    # sofascore.(totalPasses-totalLongBalls)/totalPasses
+    "Pass progression":        "SC",    # sofascore.accurateFinalThirdPasses/totalPasses
+    "Box threat":              "SC",    # sofascore.shotsFromInsideTheBox/totalShots
+    "Cross accuracy":          "SC",    # sofascore.accurateCrossesPercentage
+    "Dribble success":         "SC",    # sofascore.successfulDribblesPercentage
 }
 
 def _get(stats: dict, *keys: str, default: float = 0.0) -> float:
@@ -130,13 +113,13 @@ def tackle_success(stats: dict) -> float:
 
 
 def back_foot_defending(stats: dict) -> float:
-    """(blocked_shots[WhoScored] + Clr[FBref]) / 90 ÷ (1 – team_poss)
-    Tier A+C: WhoScored for blocked shots; FBref misc for clearances.
+    """(clearances + blockedShots) / 90 — Sofascore league stats (Tier SC).
+    Reactive defensive actions: cleared balls and blocked shots.
+    Falls back to FBref misc clearances if SC unavailable.
     """
-    blk_sh = _get(stats, "whoscored.blocked_shots")
-    clr = _get(stats, "misc.Clr", "misc.Performance_Clr", "defense.Clr")
-    raw = _per90(blk_sh + clr, stats)
-    return _poss_adj(raw, stats)
+    clr = _get(stats, "sofascore.clearances", "misc.Clr", "misc.Performance_Clr")
+    blk = _get(stats, "sofascore.blockedShots", "whoscored.blocked_shots")
+    return _per90(clr + blk, stats)
 
 
 def loose_ball_recoveries(stats: dict) -> float:
@@ -169,33 +152,59 @@ def aerial_success(stats: dict) -> float:
 
 
 def one_v_one_defending(stats: dict) -> float:
-    """Challenges.Tkl% — FB only, same column as tackle_success"""
+    """% of dribble challenges won — Sofascore league stats (Tier SC).
+    (totalContest - dribbledPast) / totalContest
+    Measures how often a player stops a dribbler in a direct challenge.
+    """
+    total = _get(stats, "sofascore.totalContest")
+    past = _get(stats, "sofascore.dribbledPast")
+    if total > 0:
+        return max(0.0, (total - past) / total) * 100
+    # Fallback: tackle success as a rough proxy
     return tackle_success(stats)
 
 
 # ── Possession ───────────────────────────────────────────────────────────────
 
 def link_up_play(stats: dict) -> float:
-    """(ownHalfPasses + oppHalfPasses) / totalPasses — Sofascore (Tier A+SC)"""
-    own = _get(stats, "sofascore.accurateOwnHalfPasses", "passing.Short_Att", "passing.Short.Att")
-    opp = _get(stats, "sofascore.accurateOppositionHalfPasses", "passing.Med_Att", "passing.Med.Att")
-    total = _get(stats, "sofascore.totalPasses", "passing.Total_Att", "passing.Att", "passing.Total.Att")
-    return (own + opp) / total if total > 0 else 0.0
+    """% of passes that are NOT long balls — Sofascore league stats (Tier SC).
+    Proxy for The Athletic's (short+medium) / total passes.
+    High = metronomic passer who keeps play ticking; Low = direct.
+    """
+    total = _get(stats, "sofascore.totalPasses")
+    long_ = _get(stats, "sofascore.totalLongBalls")
+    if total > 0:
+        return max(0.0, (total - long_) / total) * 100
+    # FBref passing table fallback (usually gone)
+    own = _get(stats, "passing.Short_Att", "passing.Short.Att")
+    opp = _get(stats, "passing.Med_Att", "passing.Med.Att")
+    total_fb = _get(stats, "passing.Total_Att", "passing.Att", "passing.Total.Att")
+    return (own + opp) / total_fb * 100 if total_fb > 0 else 0.0
 
 
 def ball_retention(stats: dict) -> float:
-    """accuratePassesPercentage / 100 — Sofascore (Tier A+SC)"""
+    """Pass completion % — Sofascore league stats (Tier SC).
+    High = careful, possession-minded player.
+    """
     sc_pct = _get(stats, "sofascore.accuratePassesPercentage")
     if sc_pct > 0:
-        return sc_pct / 100.0
-    return _get(stats, "passing.Total_Cmp%", "passing.Cmp%", "passing.Total.Cmp%") / 100.0
+        return sc_pct
+    # FBref passing table fallback (usually gone post Jan 2026)
+    return _get(stats, "passing.Total_Cmp%", "passing.Cmp%", "passing.Total.Cmp%")
 
 
 def launched_passes(stats: dict) -> float:
-    """Long.Att / Total.Att — passing table gone, no Sofascore equivalent"""
-    long_ = _get(stats, "passing.Long_Att", "passing.Long.Att")
-    total = _get(stats, "passing.Total_Att", "passing.Att", "passing.Total.Att")
-    return long_ / total if total > 0 else 0.0
+    """totalLongBalls / totalPasses × 100 — Sofascore league stats (Tier SC).
+    High = direct/vertical style; Low = short-passing build-up.
+    """
+    long_ = _get(stats, "sofascore.totalLongBalls")
+    total = _get(stats, "sofascore.totalPasses")
+    if total > 0:
+        return long_ / total * 100
+    # FBref fallback (passing table usually gone)
+    long_fb = _get(stats, "passing.Long_Att", "passing.Long.Att")
+    total_fb = _get(stats, "passing.Total_Att", "passing.Att", "passing.Total.Att")
+    return long_fb / total_fb * 100 if total_fb > 0 else 0.0
 
 
 # ── Progression ──────────────────────────────────────────────────────────────
@@ -218,21 +227,55 @@ def cross_volume(stats: dict) -> float:
     return _per90(crs, stats)
 
 
+def cross_accuracy(stats: dict) -> float:
+    """accurateCrossesPercentage — Sofascore league stats (Tier SC).
+    % of crosses that reach a teammate. Separates precision deliverers from
+    those who spray crosses in hope. Complements Cross volume.
+    """
+    pct = _get(stats, "sofascore.accurateCrossesPercentage")
+    if pct > 0:
+        return pct
+    # Fallback: compute from raw counts if percentage isn't available
+    accurate = _get(stats, "sofascore.accurateCrosses")
+    total = _get(stats, "sofascore.totalCross")
+    return accurate / total * 100 if total > 0 else 0.0
+
+
 def dribble_volume(stats: dict) -> float:
-    """successfulDribbles / 90 — pending: no FBref fallback for peer group."""
+    """successfulDribbles / (touches / 100) — Sofascore league stats (Tier SC).
+    Dribbles per 100 touches: accounts for involvement rather than raw volume.
+    """
     drb = _get(stats, "sofascore.successfulDribbles", "whoscored.dribbles_att")
+    touches = _get(stats, "sofascore.touches")
+    if touches > 0:
+        return drb / (touches / 100)
     return _per90(drb, stats)
 
 
+def dribble_success(stats: dict) -> float:
+    """successfulDribblesPercentage — Sofascore league stats (Tier SC).
+    % of dribble attempts that are completed. Complements Dribble volume:
+    volume shows how often a player tries; success shows how good they are at it.
+    """
+    return _get(stats, "sofascore.successfulDribblesPercentage")
+
+
 def pass_progression(stats: dict) -> float:
-    """Prog passes to opp box / 90 — pending: no FBref fallback for peer group."""
+    """accurateFinalThirdPasses / totalPasses × 100 — Sofascore league stats (Tier SC).
+    Approximates progressive passing: what share of passes reach the final third.
+    High = forward-thinking distributor.
+    """
+    f3 = _get(stats, "sofascore.accurateFinalThirdPasses")
+    total = _get(stats, "sofascore.totalPasses")
+    if total > 0:
+        return f3 / total * 100
+    # OVO / FBref fallbacks (usually unavailable for full peer group)
     to_box = _get(stats, "ovo.passes_to_opp_box")
-    total = _get(stats, "sofascore.totalPasses", "passing.Total_Att", "passing.Att")
-    if to_box > 0 and total > 0:
-        return to_box / total
     prog = _get(stats, "passing.Prog", "passing.PrgP")
     total_fb = _get(stats, "passing.Total_Att", "passing.Att", "passing.Total.Att")
-    return prog / total_fb if total_fb > 0 else 0.0
+    if to_box > 0 and total_fb > 0:
+        return to_box / total_fb * 100
+    return prog / total_fb * 100 if total_fb > 0 else 0.0
 
 
 def carry_progression(stats: dict) -> float:
@@ -259,21 +302,26 @@ def goal_threat(stats: dict) -> float:
 
 
 def shot_frequency(stats: dict) -> float:
-    """Total shots / 90  — Tier A+SC.
-
-    Uses sofascore.totalShots for registry players,
-    falls back to shooting.Standard_Sh for all FBref-only peers.
-    Both are full-season totals, divided by 90s for normalisation.
+    """totalShots / (touches / 100) — Sofascore league stats (Tier SC).
+    Shots per 100 touches: isolates those with eyes for goal from wider contributors.
+    Falls back to FBref per-90 when touches unavailable.
     """
     sh = _get(stats, "sofascore.totalShots", "shooting.Standard_Sh", "shooting.Sh")
+    touches = _get(stats, "sofascore.touches")
+    if touches > 0:
+        return sh / (touches / 100)
     return _per90(sh, stats)
 
 
 def box_threat(stats: dict) -> float:
-    """shotsFromInsideBox / totalShots — pending: no FBref shot-zone split for peers."""
-    inside = _get(stats, "sofascore.shotsFromInsideTheBox", "whoscored.attpen")
-    total_sh = _get(stats, "sofascore.totalShots", default=1.0) or 1.0
-    return inside / total_sh
+    """shotsFromInsideTheBox / totalShots × 100 — Sofascore league stats (Tier SC).
+    % of shots taken inside the box: separates penalty-box strikers from wide finishers.
+    """
+    inside = _get(stats, "sofascore.shotsFromInsideTheBox")
+    total_sh = _get(stats, "sofascore.totalShots")
+    if total_sh > 0:
+        return inside / total_sh * 100
+    return 0.0
 
 
 def shot_quality(stats: dict) -> float:
@@ -327,7 +375,9 @@ METRIC_FUNCTIONS: dict[str, callable] = {
     "Launched passes": launched_passes,
     "Creative threat": creative_threat,
     "Cross volume": cross_volume,
+    "Cross accuracy": cross_accuracy,
     "Dribble volume": dribble_volume,
+    "Dribble success": dribble_success,
     "Pass progression": pass_progression,
     "Carry progression": carry_progression,
     "Progressive receptions": progressive_receptions,

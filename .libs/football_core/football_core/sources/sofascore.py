@@ -138,10 +138,31 @@ SOFASCORE_SEASON_IDS: dict[tuple[str, int], int] = {
 
 # Stats fields to request from the tournament endpoint — covers all pizza metrics
 _LEAGUE_STAT_FIELDS = (
+    # Identity
+    "minutesPlayed,"
+    # Defending (back-foot, 1v1)
     "tackles,tacklesWon,tacklesWonPercentage,"
+    "clearances,blockedShots,"
+    "dribbledPast,totalContest,"
+    # Aerial
     "aerialDuelsWon,aerialDuelsWonPercentage,aerialLost,"
+    # Recovery
+    "ballRecovery,"
+    # Passing / possession
+    "accuratePasses,totalPasses,accuratePassesPercentage,"
+    "totalLongBalls,"
+    "accurateFinalThirdPasses,"
+    "touches,"
+    # Dribbling
     "successfulDribbles,successfulDribblesPercentage,"
-    "ballRecovery,minutesPlayed"
+    # Crossing
+    "totalCross,accurateCrosses,accurateCrossesPercentage,"
+    # Shooting
+    "shotsFromInsideTheBox,totalShots,shotsOnTarget,"
+    # Creative
+    "expectedAssists,"
+    # Misc
+    "fouls,wasFouled"
 )
 
 

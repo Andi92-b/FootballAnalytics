@@ -5,7 +5,7 @@ percentiles.py — position mapping, peer group filtering, percentile computatio
 import pandas as pd
 from scipy.stats import percentileofscore
 
-from football_core.models import MetricResult, PositionProfile
+from football_core.models import MetricResult, PeerEntry, PositionProfile
 from football_core.metrics import compute_metric_values, PENDING_METRICS, METRIC_SOURCES
 
 # ── Position mapping ──────────────────────────────────────────────────────────
@@ -42,79 +42,108 @@ _PR = "Progression"
 _A = "Attack"
 
 POSITION_MATRIX: dict[str, list[tuple[str, str]]] = {
+    # CB — centre-backs: solid defensive base + distribution style
     "CB": [
         ("Front-foot defending", _D),
         ("Tackle success",       _D),
+        ("Back-foot defending",  _D),
         ("Aerial volume",        _D),
         ("Aerial success",       _D),
         ("Ball recovery",        _D),
+        ("Ball retention",       _P),
+        ("Link-up play",         _P),
+        ("Launched passes",      _P),
+        ("Pass progression",     _PR),
     ],
+    # FB — full-backs: defensive solidity + creative output in wide areas
     "FB": [
         ("Front-foot defending", _D),
         ("Tackle success",       _D),
+        ("One-v-one defending",  _D),
+        ("Back-foot defending",  _D),
+        ("Ball recovery",        _D),
+        ("Ball retention",       _P),
+        ("Link-up play",         _P),
         ("Creative threat",      _PR),
         ("Cross volume",         _PR),
+        ("Cross accuracy",       _PR),
         ("Dribble volume",       _PR),
+        ("Dribble success",      _PR),
         ("Foul drawing",         _PR),
         ("Goal threat",          _A),
-        ("Shot frequency",       _A),
-        ("Shot accuracy",        _A),
-        ("Shot quality",         _A),
     ],
+    # DM — defensive midfielders: defensive anchor + progressive distribution
     "DM": [
         ("Front-foot defending", _D),
         ("Tackle success",       _D),
+        ("One-v-one defending",  _D),
+        ("Back-foot defending",  _D),
         ("Aerial success",       _D),
         ("Ball recovery",        _D),
+        ("Ball retention",       _P),
+        ("Link-up play",         _P),
+        ("Launched passes",      _P),
+        ("Pass progression",     _PR),
         ("Creative threat",      _PR),
-        ("Cross volume",         _PR),
-        ("Goal threat",          _A),
-        ("Shot frequency",       _A),
     ],
+    # CM — central midfielders: all-round: defend, retain, progress, threaten
     "CM": [
         ("Front-foot defending", _D),
         ("Tackle success",       _D),
         ("Ball recovery",        _D),
+        ("Ball retention",       _P),
+        ("Link-up play",         _P),
+        ("Pass progression",     _PR),
         ("Creative threat",      _PR),
-        ("Cross volume",         _PR),
-        ("Foul drawing",         _PR),
         ("Dribble volume",       _PR),
+        ("Dribble success",      _PR),
+        ("Foul drawing",         _PR),
         ("Goal threat",          _A),
-        ("Runs in behind",       _A),
         ("Shot frequency",       _A),
-        ("Shot accuracy",        _A),
         ("Shot quality",         _A),
     ],
+    # AM — attacking midfielders: progression + creation + finishing
     "AM": [
-        ("Front-foot defending", _D),
+        ("Ball retention",       _P),
+        ("Link-up play",         _P),
+        ("Pass progression",     _PR),
         ("Creative threat",      _PR),
         ("Cross volume",         _PR),
-        ("Foul drawing",         _PR),
+        ("Cross accuracy",       _PR),
         ("Dribble volume",       _PR),
+        ("Dribble success",      _PR),
+        ("Foul drawing",         _PR),
         ("Goal threat",          _A),
-        ("Runs in behind",       _A),
+        ("Box threat",           _A),
         ("Shot frequency",       _A),
-        ("Shot accuracy",        _A),
         ("Shot quality",         _A),
     ],
+    # W — wingers: drive, create, deliver, and score
     "W": [
         ("Dribble volume",       _PR),
+        ("Dribble success",      _PR),
         ("Creative threat",      _PR),
         ("Cross volume",         _PR),
+        ("Cross accuracy",       _PR),
         ("Foul drawing",         _PR),
-        ("Aerial success",       _PR),
+        ("Aerial success",       _D),
+        ("Ball retention",       _P),
         ("Goal threat",          _A),
-        ("Runs in behind",       _A),
+        ("Box threat",           _A),
         ("Shot frequency",       _A),
         ("Shot accuracy",        _A),
         ("Shot quality",         _A),
     ],
+    # CF — centre-forwards: aerial, hold-up, movement, and finishing
     "CF": [
         ("Aerial success",       _D),
-        ("Creative threat",      _PR),
-        ("Dribble volume",       _PR),
         ("Foul drawing",         _PR),
+        ("Dribble volume",       _PR),
+        ("Dribble success",      _PR),
+        ("Ball retention",       _P),
+        ("Creative threat",      _PR),
         ("Goal threat",          _A),
+        ("Box threat",           _A),
         ("Runs in behind",       _A),
         ("Shot frequency",       _A),
         ("Shot accuracy",        _A),
@@ -175,7 +204,7 @@ def compute_percentiles(
     position_bucket: str,
     min_minutes: int = 900,
     available_sources: list[str] | None = None,
-) -> tuple[list[MetricResult], list[str]]:
+) -> tuple[list[MetricResult], list[str], list[PeerEntry]]:
     """
     Compute percentile ranks for the player within their positional peer group.
 
@@ -189,7 +218,7 @@ def compute_percentiles(
 
     Returns
     -------
-    (list[MetricResult], missing_metrics: list[str])
+    (list[MetricResult], missing_metrics: list[str], peers: list[PeerEntry])
     """
     available_sources = available_sources or ["fbref"]
     profile = get_position_profile(position_bucket)
@@ -217,7 +246,7 @@ def compute_percentiles(
         metric_names.append(name)
 
     # Build peer group: same position bucket, min minutes
-    peers = []
+    peers_raw: list[dict] = []
     for p in all_player_stats:
         try:
             pos_str = _get_player_pos_string(p)
@@ -226,14 +255,14 @@ def compute_percentiles(
             continue
         mins = _get_minutes(p)
         if bucket == position_bucket and mins >= min_minutes:
-            peers.append(p)
+            peers_raw.append(p)
 
-    if not peers:
-        peers = [player_stats]  # fallback — at least the player themselves
+    if not peers_raw:
+        peers_raw = [player_stats]  # fallback — at least the player themselves
 
     # Compute raw values for all peers
     peer_raw_values: dict[str, list[float]] = {name: [] for name in metric_names}
-    for peer in peers:
+    for peer in peers_raw:
         vals = compute_metric_values(peer, metric_names)
         for name, val in vals.items():
             peer_raw_values[name].append(val)
@@ -256,4 +285,18 @@ def compute_percentiles(
             source=source,
         ))
 
-    return results, missing_metrics
+    # Build PeerEntry list — compute metric values for each peer and attach identity
+    peer_entries: list[PeerEntry] = []
+    for peer in peers_raw:
+        peer_metrics = compute_metric_values(peer, metric_names)
+        peer_entries.append(PeerEntry(
+            name=str(peer.get("standard.player", peer.get("player", "Unknown"))),
+            team=str(peer.get("standard.team", peer.get("team", ""))),
+            position=str(_get_player_pos_string(peer)),
+            minutes=int(_get_minutes(peer)),
+            metric_values={k: round(v, 4) for k, v in peer_metrics.items()},
+        ))
+    # Sort by minutes descending so top qualifiers appear first
+    peer_entries.sort(key=lambda p: -p.minutes)
+
+    return results, missing_metrics, peer_entries

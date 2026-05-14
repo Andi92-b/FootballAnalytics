@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PizzaChart, MetricResult } from "@/components/PizzaChart";
 import { PlayerProfile } from "@/components/PlayerProfile";
+import { MetricLeaderboard, PeerRoster, type PeerEntry } from "@/components/PeerPanel";
+import { METRIC_DESCRIPTIONS } from "@/lib/metricDescriptions";
 
 const API = "http://localhost:8000";
 
@@ -25,6 +27,7 @@ interface PlayerData {
   missing_metrics: string[];
   data_sources: string[];
   svg: string;
+  peers: PeerEntry[];
 }
 
 function seasonLabel(year: number): string {
@@ -40,6 +43,7 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -84,6 +88,7 @@ export default function Home() {
       }
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       setData(await res.json());
+      setSelectedMetric(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setData(null);
@@ -164,6 +169,39 @@ export default function Home() {
         error={error}
       />
 
+      {/* ── Metric pills + leaderboard ── */}
+      {data && data.peers.length > 0 && (
+        <div className="w-full max-w-[600px] mx-auto mt-6">
+          <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">
+            Compare by metric — {data.peers.length} peers
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {data.metrics.map((m) => (
+              <button
+                key={m.name}
+                onClick={() => setSelectedMetric(selectedMetric === m.name ? null : m.name)}
+                title={METRIC_DESCRIPTIONS[m.name]}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  selectedMetric === m.name
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {selectedMetric && (
+            <MetricLeaderboard
+              metric={selectedMetric}
+              peers={data.peers}
+              playerName={data.player}
+              playerRaw={data.metrics.find((m) => m.name === selectedMetric)?.raw ?? 0}
+            />
+          )}
+        </div>
+      )}
+
       {/* ── Stats Dashboard ── */}
       {playerInfo && selectedSeason && selectedLeague && (
         <>
@@ -185,6 +223,22 @@ export default function Home() {
               season={selectedSeason}
               league={selectedLeague}
             />
+            {data && data.peers.length > 0 && (
+              <>
+                <hr className="border-gray-100 my-8" />
+                <h3 className="text-base font-semibold text-gray-800 mb-1">
+                  Peer Group Roster
+                </h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  {data.peers.length} players · {data.position} · {data.league.replace(/^[A-Z]+-/, "")} · {data.season}
+                </p>
+                <PeerRoster
+                  peers={data.peers}
+                  playerName={data.player}
+                  metrics={data.metrics}
+                />
+              </>
+            )}
           </section>
         </>
       )}
