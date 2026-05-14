@@ -2,10 +2,12 @@
 percentiles.py — position mapping, peer group filtering, percentile computation.
 """
 
+import math
+
 import pandas as pd
 from scipy.stats import percentileofscore
 
-from football_core.models import MetricResult, PeerEntry, PositionProfile
+from football_core.models import MetricResult, PeerEntry, PositionProfile, SimilarPlayer
 from football_core.metrics import compute_metric_values, PENDING_METRICS, METRIC_SOURCES
 
 # ── Position mapping ──────────────────────────────────────────────────────────
@@ -153,6 +155,19 @@ POSITION_MATRIX: dict[str, list[tuple[str, str]]] = {
 }
 
 
+def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
+    """Cosine similarity between two metric-value dicts (common keys only)."""
+    keys = [k for k in a if k in b]
+    if not keys:
+        return 0.0
+    dot = sum(a[k] * b[k] for k in keys)
+    norm_a = math.sqrt(sum(a[k] ** 2 for k in keys))
+    norm_b = math.sqrt(sum(b[k] ** 2 for k in keys))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 def map_position(fbref_pos_string: str) -> str:
     """Map a raw FBref position string to a position bucket."""
     s = fbref_pos_string.strip()
@@ -204,7 +219,7 @@ def compute_percentiles(
     position_bucket: str,
     min_minutes: int = 900,
     available_sources: list[str] | None = None,
-) -> tuple[list[MetricResult], list[str], list[PeerEntry]]:
+) -> tuple[list[MetricResult], list[str], list[PeerEntry], list[SimilarPlayer]]:
     """
     Compute percentile ranks for the player within their positional peer group.
 
@@ -218,7 +233,7 @@ def compute_percentiles(
 
     Returns
     -------
-    (list[MetricResult], missing_metrics: list[str], peers: list[PeerEntry])
+    (list[MetricResult], missing_metrics: list[str], peers: list[PeerEntry], similar: list[SimilarPlayer])
     """
     available_sources = available_sources or ["fbref"]
     profile = get_position_profile(position_bucket)
@@ -299,4 +314,32 @@ def compute_percentiles(
     # Sort by minutes descending so top qualifiers appear first
     peer_entries.sort(key=lambda p: -p.minutes)
 
-    return results, missing_metrics, peer_entries
+    # ── Compute similar players (cross-position, all qualifiers, min 900 min) ──
+    player_mv = {k: round(v, 4) for k, v in player_raw.items()}
+    player_name_key = str(player_stats.get("standard.player", player_stats.get("player", "")))
+
+    similar_candidates: list[SimilarPlayer] = []
+    for p_stats in all_player_stats:
+        p_name = str(p_stats.get("standard.player", p_stats.get("player", "Unknown")))
+        if p_name == player_name_key:
+            continue
+        p_mins = _get_minutes(p_stats)
+        if p_mins < min_minutes:
+            continue
+        # Compute metric values using the TARGET player's metric list (same namespace)
+        p_mv = compute_metric_values(p_stats, metric_names)
+        sim = _cosine_similarity(player_mv, p_mv)
+        p_pos_bucket = map_position(_get_player_pos_string(p_stats))
+        similar_candidates.append(SimilarPlayer(
+            name=p_name,
+            team=str(p_stats.get("standard.team", p_stats.get("team", ""))),
+            position=p_pos_bucket,
+            minutes=int(p_mins),
+            similarity=round(sim, 4),
+            metric_values={k: round(v, 4) for k, v in p_mv.items()},
+        ))
+
+    similar_candidates.sort(key=lambda s: -s.similarity)
+    similar_players = similar_candidates[:10]
+
+    return results, missing_metrics, peer_entries, similar_players

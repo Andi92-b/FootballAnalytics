@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { PizzaChart, MetricResult } from "@/components/PizzaChart";
 import { PlayerProfile } from "@/components/PlayerProfile";
 import { MetricLeaderboard, PeerRoster, type PeerEntry } from "@/components/PeerPanel";
+import { StyleSummary } from "@/components/StyleSummary";
+import { SimilarPlayers, type SimilarPlayerData } from "@/components/SimilarPlayers";
 import { METRIC_DESCRIPTIONS } from "@/lib/metricDescriptions";
 
 const API = "http://localhost:8000";
@@ -28,6 +30,7 @@ interface PlayerData {
   data_sources: string[];
   svg: string;
   peers: PeerEntry[];
+  similar_players: SimilarPlayerData[];
 }
 
 interface SearchSuggestion {
@@ -269,23 +272,48 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Pizza chart ── */}
-      <PizzaChart
-        svg={data?.svg ?? ""}
-        player={data?.player ?? ""}
-        position={data?.position ?? ""}
-        season={data?.season ?? ""}
-        league={data?.league ?? ""}
-        metrics={data?.metrics ?? []}
-        missingMetrics={data?.missing_metrics ?? []}
-        dataSources={data?.data_sources ?? []}
-        isLoading={isLoadingChart}
-        error={error}
-      />
+      {/* ── Main dashboard: pizza (left) + style summary (right) ── */}
+      <div className="w-full max-w-5xl mx-auto">
+        <div className={`flex flex-col ${data?.metrics.length ? "lg:flex-row" : ""} gap-8 items-start`}>
+          {/* Pizza chart */}
+          <div className="w-full lg:w-auto lg:shrink-0">
+            <PizzaChart
+              svg={data?.svg ?? ""}
+              player={data?.player ?? ""}
+              position={data?.position ?? ""}
+              season={data?.season ?? ""}
+              league={data?.league ?? ""}
+              metrics={data?.metrics ?? []}
+              missingMetrics={data?.missing_metrics ?? []}
+              dataSources={data?.data_sources ?? []}
+              isLoading={isLoadingChart}
+              error={error}
+            />
+          </div>
 
-      {/* ── Metric pills + leaderboard ── */}
+          {/* Style summary — only when data loaded */}
+          {data && data.metrics.length > 0 && (
+            <div className="w-full lg:flex-1 lg:min-w-[280px] lg:max-w-sm pt-2">
+              <StyleSummary metrics={data.metrics} position={data.position} />
+            </div>
+          )}
+        </div>
+
+        {/* Similar players — full width below the two columns */}
+        {data && data.similar_players.length > 0 && (
+          <div className="mt-10 pt-8 border-t border-gray-100">
+            <SimilarPlayers
+              players={data.similar_players}
+              currentPlayer={data.player}
+              onSelect={(name) => triggerSearch(name)}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ── Metric leaderboard (peer comparison) ── */}
       {data && data.peers.length > 0 && (
-        <div className="w-full max-w-[600px] mx-auto mt-6">
+        <div className="w-full max-w-5xl mx-auto mt-8">
           <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">
             Compare by metric — {data.peers.length} peers
           </p>
@@ -319,8 +347,8 @@ export default function Home() {
       {/* ── Stats Dashboard ── */}
       {playerInfo && selectedSeason && selectedLeague && (
         <>
-          <hr className="w-full max-w-3xl border-gray-200 my-12" />
-          <section className="w-full max-w-3xl">
+          <hr className="w-full max-w-5xl border-gray-200 my-12" />
+          <section className="w-full max-w-5xl">
             <h2 className="text-xl font-semibold text-gray-800 mb-1">
               Player Stats Dashboard
             </h2>

@@ -44,6 +44,15 @@ class PeerEntry(BaseModel):
     metric_values: dict[str, float]
 
 
+class SimilarPlayer(BaseModel):
+    name: str
+    team: str
+    position: str
+    minutes: int
+    similarity: float
+    metric_values: dict[str, float]
+
+
 class PlayerResponse(BaseModel):
     player: str
     position: str
@@ -55,6 +64,7 @@ class PlayerResponse(BaseModel):
     metrics: list[MetricResult]
     svg: str
     peers: list[PeerEntry] = []
+    similar_players: list[SimilarPlayer] = []
 
 
 class PlayerSeasonsResponse(BaseModel):
@@ -185,5 +195,13 @@ async def get_player(
                 minutes=p.minutes, metric_values=p.metric_values,
             )
             for p in pizza_data.peers
+        ],
+        similar_players=[
+            SimilarPlayer(
+                name=s.name, team=s.team, position=s.position,
+                minutes=s.minutes, similarity=s.similarity,
+                metric_values=s.metric_values,
+            )
+            for s in pizza_data.similar_players
         ],
     )

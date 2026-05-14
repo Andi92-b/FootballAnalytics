@@ -99,7 +99,7 @@ def get_pizza_data(player_name: str, season: int, league: str) -> PizzaData:
 
     pos_raw = stats.get("standard.pos", "DF")
     pos_bucket = map_position(pos_raw)  # pass full string so POSITION_MAP_MULTI matches e.g. "MF,DF" → DM
-    results, missing, peers = compute_percentiles(
+    results, missing, peers, similar = compute_percentiles(
         stats, all_player_stats, pos_bucket,
         available_sources=fetch_result.available_sources,
     )
@@ -115,5 +115,6 @@ def get_pizza_data(player_name: str, season: int, league: str) -> PizzaData:
         data_sources=fetch_result.available_sources,
         data_freshness=fetch_result.data_freshness,
         peers=peers,
+        similar_players=similar,
     )
 

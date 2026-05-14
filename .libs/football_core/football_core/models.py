@@ -23,6 +23,15 @@ class PeerEntry(BaseModel):
     metric_values: dict[str, float]  # metric_name → raw value
 
 
+class SimilarPlayer(BaseModel):
+    name: str
+    team: str
+    position: str       # position bucket, e.g. "W"
+    minutes: int
+    similarity: float   # cosine similarity 0–1 (higher = more similar)
+    metric_values: dict[str, float]
+
+
 class PositionProfile(BaseModel):
     position_bucket: str
     fbref_string: str
@@ -40,3 +49,4 @@ class PizzaData(BaseModel):
     data_freshness: dict[str, str] = {}
     svg: str | None = None
     peers: list[PeerEntry] = []
+    similar_players: list[SimilarPlayer] = []
