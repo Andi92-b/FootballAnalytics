@@ -278,3 +278,56 @@ def cache_invalidate(name: str, league: str, season: int) -> None:
             "DELETE FROM player_cache WHERE name=? AND league=? AND season=?",
             (name, league, season),
         )
+
+
+# ── Player roles ──────────────────────────────────────────────────────────────
+
+def get_player_role(name: str, league: str, season: int) -> dict | None:
+    """Return role data for a player, or None if not in the roles table.
+
+    Falls back to any season for the same league if exact season not found.
+    Returns: {role_label, role_desc, cluster_id, features}
+    """
+    with _conn() as c:
+        row = c.execute(
+            """SELECT role_label, role_desc, cluster_id, features_json
+               FROM player_roles
+               WHERE name = ? AND league = ? AND season = ?""",
+            (name, league, season),
+        ).fetchone()
+        if not row:
+            # Fallback: most recent season in any league matching the name
+            row = c.execute(
+                """SELECT role_label, role_desc, cluster_id, features_json
+                   FROM player_roles
+                   WHERE name = ?
+                   ORDER BY season DESC LIMIT 1""",
+                (name,),
+            ).fetchone()
+    if not row:
+        return None
+    return {
+        "role_label": row["role_label"],
+        "role_desc": row["role_desc"],
+        "cluster_id": row["cluster_id"],
+        "features": json.loads(row["features_json"]),
+    }
+
+
+def get_cluster_peers(cluster_id: int, league: str, exclude_name: str, limit: int = 5) -> list[dict]:
+    """Return players with the same cluster in the same league, sorted by minutes (most played first)."""
+    with _conn() as c:
+        rows = c.execute(
+            """
+            SELECT r.name, p.team, p.minutes
+            FROM player_roles r
+            LEFT JOIN players p ON p.name = r.name AND p.league = r.league
+            WHERE r.cluster_id = ?
+              AND r.league = ?
+              AND r.name != ?
+            ORDER BY COALESCE(p.minutes, 0) DESC
+            LIMIT ?
+            """,
+            (cluster_id, league, exclude_name, limit),
+        ).fetchall()
+    return [{"name": r["name"], "team": r["team"] or ""} for r in rows]

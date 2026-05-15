@@ -9,6 +9,7 @@ import { SimilarPlayers, type SimilarPlayerData } from "@/components/SimilarPlay
 import { PositionCard, type PlayingTimeData } from "@/components/PositionCard";
 import { KeyStats, type RawStats } from "@/components/KeyStats";
 import { SeasonTrend, type SeasonDataPoint } from "@/components/SeasonTrend";
+import { RoleTag, type RoleData } from "@/components/RoleTag";
 import { METRIC_DESCRIPTIONS } from "@/lib/metricDescriptions";
 
 const API = "http://localhost:8000";
@@ -98,6 +99,7 @@ export default function Home() {
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [seasonHistory, setSeasonHistory] = useState<SeasonDataPoint[] | null>(null);
+  const [roleData, setRoleData] = useState<RoleData | null>(null);
 
   // Autocomplete
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
@@ -157,6 +159,7 @@ export default function Home() {
     setSelectedSeason(null);
     setData(null);
     setSeasonHistory(null);
+    setRoleData(null);
     try {
       const res = await fetch(`${API}/api/player/${encodeURIComponent(name)}/seasons`);
       if (res.status === 404) {
@@ -172,6 +175,13 @@ export default function Home() {
       fetch(`${API}/api/player/${encodeURIComponent(name)}/history`)
         .then(r => r.ok ? r.json() : null)
         .then(j => j?.history?.length >= 2 ? setSeasonHistory(j.history) : null)
+        .catch(() => null);
+      // Fetch tactical role
+      const latestLeague = info.seasons_info[info.seasons_info.length - 1].league;
+      const latestSeason = info.seasons_info[info.seasons_info.length - 1].season;
+      fetch(`${API}/api/player/${encodeURIComponent(name)}/role?season=${latestSeason}&league=${encodeURIComponent(latestLeague)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(j => j ? setRoleData({ role: j.role, description: j.description, cluster_id: j.cluster_id, similar_players: j.similar_players }) : null)
         .catch(() => null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -318,6 +328,11 @@ export default function Home() {
         {data && Object.keys(data.raw_stats ?? {}).length > 0 && (
           <div className="mb-6">
             <KeyStats stats={data.raw_stats} position={data.position} />
+            {roleData && (
+              <div className="mt-3">
+                <RoleTag role={roleData} />
+              </div>
+            )}
             {seasonHistory && seasonHistory.length >= 2 && (
               <SeasonTrend history={seasonHistory} position={data.position} />
             )}

@@ -250,6 +250,34 @@ async def get_player_history(name: str) -> PlayerHistoryResponse:
     return PlayerHistoryResponse(player=name, history=history)
 
 
+# ── Role endpoint ─────────────────────────────────────────────────────────────
+
+class RoleResponse(BaseModel):
+    role: str
+    description: str
+    cluster_id: int
+    similar_players: list[dict]  # [{name, team}]
+
+
+@router.get("/player/{name}/role", response_model=RoleResponse)
+async def get_player_role(
+    name: str,
+    season: int = Query(default=2025),
+    league: str = Query(default="ENG-Premier League"),
+) -> RoleResponse:
+    """Return the tactical role assigned to a player by the k-means clustering model."""
+    role_data = player_db.get_player_role(name, league, season)
+    if role_data is None:
+        raise HTTPException(status_code=404, detail="Role not found for this player/season/league")
+    peers = player_db.get_cluster_peers(role_data["cluster_id"], league, name, limit=5)
+    return RoleResponse(
+        role=role_data["role_label"],
+        description=role_data["role_desc"],
+        cluster_id=role_data["cluster_id"],
+        similar_players=peers,
+    )
+
+
 @router.get("/player/{name}", response_model=PlayerResponse)
 async def get_player(
     name: str,
