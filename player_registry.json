@@ -1,4 +1,27 @@
 {
+  "Anthony Gordon": {
+    "display_name": "Anthony Gordon",
+    "position": "RW",
+    "current_team": "Newcastle United",
+    "nationality": "England",
+    "sofascore_id": 914902,
+    "sofascore_tournament_id": 17,
+    "sofascore_season_id": 76986,
+    "sofascore_tournament_name": "Premier League 25/26",
+    "understat_name": "Anthony Gordon",
+    "understat_league": "ENG-Premier League",
+    "understat_season": 2025,
+    "footystats_slug": "england/anthony-gordon",
+    "ovo_slug": "Anthony-Gordon",
+    "fbref_league": "ENG-Premier League",
+    "fbref_season": 2025,
+    "league_history": {
+      "2022": "ENG-Premier League",
+      "2023": "ENG-Premier League",
+      "2024": "ENG-Premier League",
+      "2025": "ENG-Premier League"
+    }
+  },
   "Luis Diaz": {
     "display_name": "Luis Díaz",
     "position": "LW",

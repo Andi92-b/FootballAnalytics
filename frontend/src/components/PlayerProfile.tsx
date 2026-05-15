@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 interface StatEntry {
   value: number;
-  source: "sofascore" | "fbref" | "understat" | "footystats" | "ovo";
+  source: "sofascore" | "fbref" | "understat" | "footystats" | "ovo" | "transfermarkt";
 }
 
 interface ProfileData {
@@ -16,22 +16,26 @@ interface ProfileData {
   errors: Record<string, string>;
   merged: Record<string, StatEntry>;
   raw: Record<string, unknown>;
+  tm_main_position: string;
+  tm_other_positions: string[];
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  sofascore:  "bg-blue-100 text-blue-800",
-  fbref:      "bg-orange-100 text-orange-800",
-  understat:  "bg-green-100 text-green-800",
-  footystats: "bg-purple-100 text-purple-800",
-  ovo:        "bg-teal-100 text-teal-800",
+  sofascore:     "bg-blue-100 text-blue-800",
+  fbref:         "bg-orange-100 text-orange-800",
+  understat:     "bg-green-100 text-green-800",
+  footystats:    "bg-purple-100 text-purple-800",
+  ovo:           "bg-teal-100 text-teal-800",
+  transfermarkt: "bg-emerald-100 text-emerald-800",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  sofascore:  "Sofascore",
-  fbref:      "FBref",
-  understat:  "Understat",
-  footystats: "FootyStats",
-  ovo:        "1vs1",
+  sofascore:     "Sofascore",
+  fbref:         "FBref",
+  understat:     "Understat",
+  footystats:    "FootyStats",
+  ovo:           "1vs1",
+  transfermarkt: "Transfermarkt",
 };
 
 // Stat display config: key → { label, unit, decimals, category }
@@ -217,10 +221,48 @@ export function PlayerProfile({
     grouped[cat].push([key, entry]);
   }
 
-  const activeSources = ["sofascore", "fbref", "understat", "footystats", "ovo"];
+  const activeSources = ["sofascore", "fbref", "understat", "footystats", "ovo", "transfermarkt"];
+
+  // Extract raw TM data for richer display
+  const tmRaw = data.raw?.["transfermarkt"] as Record<string, unknown> | undefined;
+  const tmGroup = (tmRaw?.main_position_group as string) || "";
+  const tmSlug  = (tmRaw?.tm_slug as string) || "";
+  const tmId    = (tmRaw?.tm_id as number) || null;
 
   return (
     <div className="w-full max-w-3xl mx-auto">
+      {/* Position badges — sourced from Transfermarkt */}
+      {(data.tm_main_position || (data.tm_other_positions?.length > 0)) && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Position</span>
+          {tmGroup && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              {tmGroup}
+            </span>
+          )}
+          {data.tm_main_position && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+              {data.tm_main_position}
+            </span>
+          )}
+          {data.tm_other_positions?.map((pos) => (
+            <span key={pos} className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              {pos}
+            </span>
+          ))}
+          {tmId && tmSlug && (
+            <a
+              href={`https://www.transfermarkt.com/${tmSlug}/profil/spieler/${tmId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-emerald-700 hover:underline ml-1"
+            >
+              ↗ Transfermarkt
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Sources bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex gap-1 flex-wrap">

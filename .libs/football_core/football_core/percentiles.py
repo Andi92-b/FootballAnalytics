@@ -2,8 +2,6 @@
 percentiles.py — position mapping, peer group filtering, percentile computation.
 """
 
-import math
-
 import pandas as pd
 from scipy.stats import percentileofscore
 
@@ -27,8 +25,8 @@ POSITION_MAP: dict[str, str] = {
 # Multi-part FBref position strings (e.g. "MF,FW", "FW,MF", "DF,MF")
 # Resolved in order: first recognised part wins.
 POSITION_MAP_MULTI: dict[str, str] = {
-    "MF,FW": "W",
-    "FW,MF": "W",
+    "MF,FW": "W",    # midfielder primarily, plays forward = winger
+    "FW,MF": "CF",   # forward primarily, plays midfield = striker (not winger)
     "DF,MF": "DM",
     "MF,DF": "DM",
     "DF,FW": "FB",
@@ -155,17 +153,29 @@ POSITION_MATRIX: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
-    """Cosine similarity between two metric-value dicts (common keys only)."""
-    keys = [k for k in a if k in b]
+def _percentile_similarity(
+    target_pcts: dict[str, float],
+    candidate_raw: dict[str, float],
+    peer_raw_values: dict[str, list[float]],
+) -> tuple[float, float]:
+    """
+    Similarity based on mean absolute percentile deviation.
+
+    Returns (similarity, mean_deviation) where:
+      - mean_deviation = mean |target_pct - candidate_pct| across shared metrics (0-99 scale)
+      - similarity = 1 - mean_deviation / 99, clipped to [0, 1]
+    """
+    keys = [k for k in target_pcts if k in candidate_raw and k in peer_raw_values]
     if not keys:
-        return 0.0
-    dot = sum(a[k] * b[k] for k in keys)
-    norm_a = math.sqrt(sum(a[k] ** 2 for k in keys))
-    norm_b = math.sqrt(sum(b[k] ** 2 for k in keys))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+        return 0.0, 99.0
+    diffs: list[float] = []
+    for k in keys:
+        cand_pct = percentileofscore(peer_raw_values[k], candidate_raw[k], kind="rank")
+        cand_pct = max(0.0, min(99.0, cand_pct))
+        diffs.append(abs(target_pcts[k] - cand_pct))
+    avg_diff = sum(diffs) / len(diffs)
+    sim = round(max(0.0, 1.0 - avg_diff / 99.0), 4)
+    return sim, round(avg_diff, 1)
 
 
 def map_position(fbref_pos_string: str) -> str:
@@ -219,6 +229,7 @@ def compute_percentiles(
     position_bucket: str,
     min_minutes: int = 900,
     available_sources: list[str] | None = None,
+    position_overrides: dict[str, str] | None = None,
 ) -> tuple[list[MetricResult], list[str], list[PeerEntry], list[SimilarPlayer]]:
     """
     Compute percentile ranks for the player within their positional peer group.
@@ -230,6 +241,8 @@ def compute_percentiles(
     position_bucket    : e.g. "CB"
     min_minutes        : minimum minutes to qualify as a peer
     available_sources  : list of available source names (e.g. ["fbref", "understat"])
+    position_overrides : optional {player_name: bucket} mapping pre-built from player_positions
+                         table — overrides FBref position for peer filtering when present
 
     Returns
     -------
@@ -268,6 +281,12 @@ def compute_percentiles(
             bucket = map_position(pos_str)
         except ValueError:
             continue
+        # DB position override: use canonical bucket from player_positions table when available
+        if position_overrides is not None:
+            peer_name = str(p.get("standard.player", p.get("player", "")))
+            override = position_overrides.get(peer_name)
+            if override:
+                bucket = override
         mins = _get_minutes(p)
         if bucket == position_bucket and mins >= min_minutes:
             peers_raw.append(p)
@@ -304,18 +323,48 @@ def compute_percentiles(
     peer_entries: list[PeerEntry] = []
     for peer in peers_raw:
         peer_metrics = compute_metric_values(peer, metric_names)
+
+        def _peer_int(p: dict, *keys: str) -> int:
+            for k in keys:
+                v = p.get(k)
+                if v is not None:
+                    try:
+                        return int(float(str(v).replace(",", "")))
+                    except (ValueError, TypeError):
+                        pass
+            return 0
+
+        # Compute effective bucket (same logic as peer-filtering loop, including DB override)
+        _peer_name = str(peer.get("standard.player", peer.get("player", "")))
+        _effective_bucket = map_position(_get_player_pos_string(peer))
+        if position_overrides is not None and _peer_name:
+            _override = position_overrides.get(_peer_name)
+            if _override:
+                _effective_bucket = _override
+
+        peer_pcts: dict[str, int] = {}
+        for mname, mval in peer_metrics.items():
+            pvals = peer_raw_values.get(mname, [])
+            if pvals:
+                p = percentileofscore(pvals, mval, kind="rank")
+                peer_pcts[mname] = max(0, min(99, round(p)))
+
         peer_entries.append(PeerEntry(
-            name=str(peer.get("standard.player", peer.get("player", "Unknown"))),
+            name=_peer_name or "Unknown",
             team=str(peer.get("standard.team", peer.get("team", ""))),
-            position=str(_get_player_pos_string(peer)),
+            position=_effective_bucket,
+            apps=_peer_int(peer, "standard.Playing Time_MP", "standard.MP"),
+            starts=_peer_int(peer, "standard.Playing Time_Starts", "standard.Starts"),
             minutes=int(_get_minutes(peer)),
             metric_values={k: round(v, 4) for k, v in peer_metrics.items()},
+            metric_percentiles=peer_pcts,
         ))
     # Sort by minutes descending so top qualifiers appear first
     peer_entries.sort(key=lambda p: -p.minutes)
 
     # ── Compute similar players (cross-position, all qualifiers, min 900 min) ──
-    player_mv = {k: round(v, 4) for k, v in player_raw.items()}
+    # Build target percentile lookup (metric name → percentile) for fast comparison
+    target_pcts: dict[str, float] = {r.name: float(r.percentile) for r in results}
     player_name_key = str(player_stats.get("standard.player", player_stats.get("player", "")))
 
     similar_candidates: list[SimilarPlayer] = []
@@ -328,14 +377,16 @@ def compute_percentiles(
             continue
         # Compute metric values using the TARGET player's metric list (same namespace)
         p_mv = compute_metric_values(p_stats, metric_names)
-        sim = _cosine_similarity(player_mv, p_mv)
+        # Similarity = 1 − mean |target_pct − candidate_pct| / 99
+        sim, mean_dev = _percentile_similarity(target_pcts, p_mv, peer_raw_values)
         p_pos_bucket = map_position(_get_player_pos_string(p_stats))
         similar_candidates.append(SimilarPlayer(
             name=p_name,
             team=str(p_stats.get("standard.team", p_stats.get("team", ""))),
             position=p_pos_bucket,
             minutes=int(p_mins),
-            similarity=round(sim, 4),
+            similarity=sim,
+            mean_deviation=mean_dev,
             metric_values={k: round(v, 4) for k, v in p_mv.items()},
         ))
 

@@ -43,10 +43,13 @@ class StatGroup(BaseModel):
 class ProfileResponse(BaseModel):
     player: str
     display_name: str
-    position: str
+    position: str       # FBref bucket (CB/FB/DM/CM/AM/W/CF)
     team: str
     available_sources: list[str]
     errors: dict[str, str]
+    # Transfermarkt position data (populated when available)
+    tm_main_position: str = ""
+    tm_other_positions: list[str] = []
     # Flat merged stats with source attribution
     merged: dict[str, StatEntry]
     # Raw per-source data for debug / frontend use
@@ -285,6 +288,8 @@ def get_player_profile(
             # Coerce numpy/pandas types to native Python for JSON serialisation
             raw[source] = _make_serialisable(data)
 
+    tm = result.sources.get("transfermarkt") or {}
+
     return ProfileResponse(
         player=result.player,
         display_name=result.display_name,
@@ -292,6 +297,8 @@ def get_player_profile(
         team=result.team,
         available_sources=result.available_sources,
         errors=result.errors,
+        tm_main_position=tm.get("main_position", ""),
+        tm_other_positions=tm.get("other_positions", []),
         merged=merged,
         raw=raw,
     )

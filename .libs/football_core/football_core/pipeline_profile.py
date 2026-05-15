@@ -109,12 +109,21 @@ def _run_ovo(entry: dict, cache_dir: Path) -> dict | None:
     return fetch_ovo(slug=entry["ovo_slug"], cache_dir=cache_dir)
 
 
+def _run_transfermarkt(entry: dict, cache_dir: Path) -> dict | None:
+    from football_core.sources.transfermarkt import fetch_transfermarkt
+    name = entry.get("display_name") or entry.get("name", "")
+    if not name:
+        return None
+    return fetch_transfermarkt(name, cache_dir)
+
+
 _FETCHERS = {
     "sofascore": _run_sofascore,
     "understat": _run_understat,
     "fbref": _run_fbref,
     "footystats": _run_footystats,
     "ovo": _run_ovo,
+    "transfermarkt": _run_transfermarkt,
 }
 
 
@@ -139,19 +148,41 @@ def fetch_profile(
     """Fetch sources for a player and return a ProfileResult.
 
     Registry players get all 5 sources (Sofascore, Understat, FBref, FootyStats, OVO).
-    Non-registry players (``fallback_entry`` provided) get FBref + Understat only.
+    Non-registry players (``fallback_entry`` provided) get FBref + Understat always,
+    plus Sofascore (auto-resolved from the league stats cache) and OVO (slug derived
+    from the player name) where possible.
 
     If ``season`` and ``league`` are provided they override the registry defaults.
     """
     # ── Registry lookup ───────────────────────────────────────────────────────
+    import unicodedata as _ud
+
+    def _norm(s: str) -> str:
+        """Strip accents and lowercase for accent-insensitive matching."""
+        return _ud.normalize("NFD", s).encode("ascii", "ignore").decode().lower().strip()
+
+    _norm_target = _norm(player_name)
+
     key = next(
         (k for k in registry if k.lower() == player_name.lower()),
         None,
     )
     if key is None:
+        # Accent-insensitive exact match (e.g. "Luis Díaz" → "Luis Diaz")
+        key = next(
+            (k for k in registry if _norm(k) == _norm_target),
+            None,
+        )
+    if key is None:
         # Fuzzy: try contains
         key = next(
             (k for k in registry if player_name.lower() in k.lower() or k.lower() in player_name.lower()),
+            None,
+        )
+    if key is None:
+        # Fuzzy accent-insensitive contains
+        key = next(
+            (k for k in registry if _norm_target in _norm(k) or _norm(k) in _norm_target),
             None,
         )
 
@@ -162,14 +193,49 @@ def fetch_profile(
         entry = dict(registry[key])  # shallow copy
         active_fetchers = _FETCHERS
     else:
-        # Non-registry player — use the fallback entry, run only FBref + Understat
+        # Non-registry player — use the fallback entry, auto-resolve Sofascore + OVO
         entry = dict(fallback_entry)  # type: ignore[arg-type]
         key = player_name
-        # Only run Understat for Big-5 leagues
-        usable = {"fbref"}
+
         lg = entry.get("fbref_league", "")
+        yr = entry.get("fbref_season", 0)
+
+        # ── Auto-resolve Sofascore ID from league stats cache ─────────────────
+        try:
+            from football_core.sources.sofascore import (
+                SOFASCORE_TOURNAMENT_IDS,
+                SOFASCORE_SEASON_IDS,
+                fetch_sofascore_league_stats,
+            )
+            tid = SOFASCORE_TOURNAMENT_IDS.get(lg)
+            sid = SOFASCORE_SEASON_IDS.get((lg, yr))
+            if tid and sid:
+                league_data = fetch_sofascore_league_stats(lg, yr, cache_dir)
+                if league_data:
+                    # Accent-insensitive lookup
+                    sc_entry = league_data.get(player_name) or next(
+                        (v for k, v in league_data.items() if _norm(k) == _norm_target),
+                        None,
+                    )
+                    if sc_entry and sc_entry.get("_sofascore_id"):
+                        entry["sofascore_id"] = sc_entry["_sofascore_id"]
+                        entry["sofascore_tournament_id"] = tid
+                        entry["sofascore_season_id"] = sid
+        except Exception as exc:
+            log.debug("Auto-resolve Sofascore ID for %s failed: %s", player_name, exc)
+
+        # ── Derive OVO slug from player name ──────────────────────────────────
+        # e.g. "Mohamed Salah" → "Mohamed-Salah"
+        entry.setdefault("ovo_slug", "-".join(player_name.split()))
+
+        # Build active fetchers based on what's been resolved
+        usable = {"fbref"}
         if lg in _UNDERSTAT_LEAGUES:
             usable.add("understat")
+        if "sofascore_id" in entry:
+            usable.add("sofascore")
+        usable.add("ovo")          # always attempt; slug is always derivable
+        usable.add("transfermarkt")  # always attempt; uses search, no ID needed
         active_fetchers = {k: v for k, v in _FETCHERS.items() if k in usable}
 
     # Apply season/league overrides when requested

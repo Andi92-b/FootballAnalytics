@@ -40,8 +40,13 @@ class PeerEntry(BaseModel):
     name: str
     team: str
     position: str
+    apps: int = 0
+    starts: int = 0
     minutes: int
     metric_values: dict[str, float]
+    metric_percentiles: dict[str, int] = {}
+    tm_main_position: str = ""
+    tm_other_positions: list[str] = []
 
 
 class SimilarPlayer(BaseModel):
@@ -50,7 +55,21 @@ class SimilarPlayer(BaseModel):
     position: str
     minutes: int
     similarity: float
+    mean_deviation: float
     metric_values: dict[str, float]
+
+
+class PlayingTimeStats(BaseModel):
+    pos: str
+    mp: int
+    minutes: int
+    min_pct: float
+    starts: int
+    mins_per_start: int
+    complete_games: int
+    subs: int
+    mins_per_sub: int
+    unsubbed: int
 
 
 class PlayerResponse(BaseModel):
@@ -65,6 +84,10 @@ class PlayerResponse(BaseModel):
     svg: str
     peers: list[PeerEntry] = []
     similar_players: list[SimilarPlayer] = []
+    playing_time: PlayingTimeStats | None = None
+    raw_stats: dict = {}
+    tm_main_position: str = ""
+    tm_other_positions: list[str] = []
 
 
 class PlayerSeasonsResponse(BaseModel):
@@ -75,6 +98,22 @@ class PlayerSeasonsResponse(BaseModel):
     team: str
     seasons: list[int]
     seasons_info: list[dict]  # [{season: int, league: str}, ...]
+    sofascore_id: int | None = None
+    sofascore_slug: str = ""
+
+
+class SeasonDataPoint(BaseModel):
+    season: int
+    season_label: str   # "2024-25"
+    league: str
+    overall_score: int
+    category_scores: dict[str, int]  # {"Defence": 72, ...}
+    raw_kpis: dict
+
+
+class PlayerHistoryResponse(BaseModel):
+    player: str
+    history: list[SeasonDataPoint]
 
 
 @router.get("/player/{name}/seasons", response_model=PlayerSeasonsResponse)
@@ -107,14 +146,21 @@ async def get_player_seasons(name: str) -> PlayerSeasonsResponse:
         else:
             seasons = list(range(current_season - 4, current_season + 1))
             seasons_info = [{"season": yr, "league": current_league} for yr in seasons]
+        # Build a URL-safe Sofascore slug from display_name
+        import unicodedata, re as _re
+        raw_name = entry.get("display_name", name)
+        slug = unicodedata.normalize("NFD", raw_name).encode("ascii", "ignore").decode().lower()
+        slug = _re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
         return PlayerSeasonsResponse(
             player=name,
-            display_name=entry.get("display_name", name),
+            display_name=raw_name,
             league=current_league,
             position=entry.get("position", ""),
             team=entry.get("current_team", ""),
             seasons=seasons,
             seasons_info=seasons_info,
+            sofascore_id=entry.get("sofascore_id") or None,
+            sofascore_slug=slug,
         )
 
     # ── 2. DB fallback (any FBref player) ────────────────────────────────────
@@ -137,6 +183,71 @@ async def get_player_seasons(name: str) -> PlayerSeasonsResponse:
         seasons=seasons,
         seasons_info=seasons_info,
     )
+
+
+@router.get("/player/{name}/history", response_model=PlayerHistoryResponse)
+async def get_player_history(name: str) -> PlayerHistoryResponse:
+    """Return season-over-season performance scores for a player.
+
+    Loops the player's league_history, calls get_pizza_data() per season
+    (uses the existing SQLite cache), and computes overall + category scores
+    from metric percentiles.  Capped at 6 seasons.
+    """
+    from backend.app.services import data_service
+
+    try:
+        registry = json.loads(_REGISTRY_PATH.read_text())
+    except Exception:
+        registry = {}
+
+    entry = registry.get(name) or next(
+        (v for k, v in registry.items() if k.lower() == name.lower()), None
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Player '{name}' not found in registry")
+
+    league_history: dict = entry.get("league_history", {})
+    seasons_to_fetch = sorted(
+        ((int(yr), lg) for yr, lg in league_history.items()),
+        key=lambda x: x[0],
+    )[-6:]  # last 6 seasons
+
+    history: list[SeasonDataPoint] = []
+    CATEGORIES = ["Defence", "Possession", "Progression", "Attack"]
+
+    for season, league in seasons_to_fetch:
+        try:
+            pizza = data_service.get_pizza_data(name, season, league)
+            if pizza is None or not pizza.metrics:
+                continue
+            all_pcts = [m.percentile for m in pizza.metrics]
+            overall = round(sum(all_pcts) / len(all_pcts)) if all_pcts else 0
+            cat_scores: dict[str, int] = {}
+            for cat in CATEGORIES:
+                pcts = [m.percentile for m in pizza.metrics if m.category == cat]
+                cat_scores[cat] = round(sum(pcts) / len(pcts)) if pcts else 0
+            raw_kpis = dict(pizza.raw_stats)
+            if pizza.playing_time:
+                pt = pizza.playing_time
+                raw_kpis.update({
+                    "minutes": pt.minutes,
+                    "apps": pt.mp,
+                    "starts": pt.starts,
+                    "min_pct": pt.min_pct,
+                    "complete_games": pt.complete_games,
+                })
+            history.append(SeasonDataPoint(
+                season=season,
+                season_label=pizza.season,
+                league=league,
+                overall_score=overall,
+                category_scores=cat_scores,
+                raw_kpis=raw_kpis,
+            ))
+        except Exception:
+            continue  # skip seasons with no data
+
+    return PlayerHistoryResponse(player=name, history=history)
 
 
 @router.get("/player/{name}", response_model=PlayerResponse)
@@ -192,7 +303,11 @@ async def get_player(
         peers=[
             PeerEntry(
                 name=p.name, team=p.team, position=p.position,
+                apps=p.apps, starts=p.starts,
                 minutes=p.minutes, metric_values=p.metric_values,
+                metric_percentiles=p.metric_percentiles,
+                tm_main_position=p.tm_main_position,
+                tm_other_positions=p.tm_other_positions,
             )
             for p in pizza_data.peers
         ],
@@ -200,8 +315,16 @@ async def get_player(
             SimilarPlayer(
                 name=s.name, team=s.team, position=s.position,
                 minutes=s.minutes, similarity=s.similarity,
+                mean_deviation=s.mean_deviation,
                 metric_values=s.metric_values,
             )
             for s in pizza_data.similar_players
         ],
+        playing_time=(
+            PlayingTimeStats(**pizza_data.playing_time.model_dump())
+            if pizza_data.playing_time else None
+        ),
+        raw_stats=pizza_data.raw_stats,
+        tm_main_position=pizza_data.tm_main_position,
+        tm_other_positions=pizza_data.tm_other_positions,
     )

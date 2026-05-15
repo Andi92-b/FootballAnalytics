@@ -21,12 +21,13 @@ from lxml import html as lhtml
 
 log = logging.getLogger(__name__)
 
-SD_TABLES = ["standard", "shooting", "misc"]
+SD_TABLES = ["standard", "shooting", "misc", "playing_time"]
 
 _PAGE = {
     "standard": "stats",
     "shooting": "shooting",
     "misc": "misc",
+    "playing_time": "playing_time",
 }
 
 
