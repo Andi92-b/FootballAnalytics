@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { PizzaChart, MetricResult } from "@/components/PizzaChart";
 import { PlayerProfile } from "@/components/PlayerProfile";
 import { MetricLeaderboard, PeerRoster, type PeerEntry } from "@/components/PeerPanel";
@@ -241,7 +242,15 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-white flex flex-col items-center py-16 px-4">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Football Analytics</h1>
-      <p className="text-gray-500 mb-8">Position-specific pizza charts from multi-source data</p>
+      <p className="text-gray-500 mb-3">Position-specific pizza charts from multi-source data</p>
+      <div className="mb-8">
+        <Link
+          href="/clusters"
+          className="text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 rounded-full px-3 py-1 hover:bg-indigo-50 transition-colors"
+        >
+          Cluster Explorer →
+        </Link>
+      </div>
 
       {/* ── Search form with autocomplete ── */}
       <div ref={searchContainerRef} className="relative w-full max-w-lg mb-4">

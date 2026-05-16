@@ -331,3 +331,21 @@ def get_cluster_peers(cluster_id: int, league: str, exclude_name: str, limit: in
             (cluster_id, league, exclude_name, limit),
         ).fetchall()
     return [{"name": r["name"], "team": r["team"] or ""} for r in rows]
+
+
+def get_all_roles() -> list[dict]:
+    """Return every row in player_roles joined with team/minutes from players."""
+    with _conn() as c:
+        rows = c.execute(
+            """
+            SELECT r.name, r.league, r.season, r.cluster_id,
+                   r.role_label, r.role_desc, r.features_json,
+                   COALESCE(p.team, '') AS team,
+                   COALESCE(p.minutes, 0) AS minutes
+            FROM player_roles r
+            LEFT JOIN players p
+                   ON p.name = r.name AND p.league = r.league AND p.season = r.season
+            ORDER BY r.cluster_id, r.name
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]

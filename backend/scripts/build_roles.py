@@ -5,10 +5,16 @@ Uses k-means on 8 per-90 FBref features from the local cache.
 Writes results into .cache/players.db → player_roles table.
 
 Run from repo root:
-  .venv/bin/python -m backend.scripts.build_roles
+  .venv/bin/python -m backend.scripts.build_roles [OPTIONS]
+
+Options:
+  --n-clusters INT    Number of k-means clusters (default: 9, range 3–20)
+  --min-90s   FLOAT   Minimum 90-minute appearances to qualify (default: 5.0)
+  --seed      INT     Random seed for k-means reproducibility (default: 42)
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
@@ -176,7 +182,11 @@ def auto_name(centroid: np.ndarray) -> tuple[str, str]:
             "Controls the tempo from deep; the fulcrum between defence and attack")
 
 
-def cluster_and_store(all_players: list[dict]) -> None:
+def cluster_and_store(
+    all_players: list[dict],
+    n_clusters: int = N_CLUSTERS,
+    seed: int = 42,
+) -> None:
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
 
@@ -190,15 +200,15 @@ def cluster_and_store(all_players: list[dict]) -> None:
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
 
-    km = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=15, max_iter=500)
+    km = KMeans(n_clusters=n_clusters, random_state=seed, n_init=15, max_iter=500)
     labels = km.fit_predict(Xs)
 
     centroids_orig = scaler.inverse_transform(km.cluster_centers_)
     role_map: dict[int, tuple[str, str]] = {
-        i: auto_name(centroids_orig[i]) for i in range(N_CLUSTERS)
+        i: auto_name(centroids_orig[i]) for i in range(n_clusters)
     }
 
-    print(f"\nCluster assignments ({N_CLUSTERS} clusters, {len(all_players)} players):")
+    print(f"\nCluster assignments ({n_clusters} clusters, {len(all_players)} players):")
     for cid, (label, _) in sorted(role_map.items()):
         members = [p["name"] for p, lbl in zip(all_players, labels) if lbl == cid]
         print(f"  [{cid}] {label:30s}  {len(members):3d} players — {members[:4]}")
@@ -253,6 +263,24 @@ def cluster_and_store(all_players: list[dict]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Cluster football players into tactical roles.")
+    parser.add_argument("--n-clusters", type=int, default=N_CLUSTERS,
+                        help="Number of k-means clusters (default: %(default)s, range 3–20)")
+    parser.add_argument("--min-90s", type=float, default=MIN_90S,
+                        help="Minimum 90-minute appearances to qualify (default: %(default)s)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for k-means reproducibility (default: %(default)s)")
+    args = parser.parse_args()
+
+    if not (3 <= args.n_clusters <= 20):
+        parser.error("--n-clusters must be between 3 and 20")
+    if not (1.0 <= args.min_90s <= 30.0):
+        parser.error("--min-90s must be between 1.0 and 30.0")
+
+    # Apply runtime min_90s override
+    global MIN_90S
+    MIN_90S = args.min_90s
+
     all_players: list[dict] = []
     for league, slug, season in CONFIGS:
         print(f"Loading {league} {season}...")
@@ -273,7 +301,7 @@ def main() -> None:
     deduped = list(seen.values())
     print(f"\nUnique players (latest season per league): {len(deduped)}")
 
-    cluster_and_store(deduped)
+    cluster_and_store(deduped, n_clusters=args.n_clusters, seed=args.seed)
 
 
 if __name__ == "__main__":
