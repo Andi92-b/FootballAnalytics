@@ -39,6 +39,15 @@ def _conn() -> sqlite3.Connection:
     return c
 
 
+ANALYSIS_DB_PATH = Path(__file__).parents[1] / ".cache" / "analysis.db"
+
+
+def _analysis_conn() -> sqlite3.Connection:
+    c = sqlite3.connect(ANALYSIS_DB_PATH)
+    c.row_factory = sqlite3.Row
+    return c
+
+
 def init_db() -> None:
     """Create all tables if they don't exist."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +90,192 @@ def init_db() -> None:
                 UNIQUE(name, league, season)
             )
         """)
+
+
+def init_analysis_db() -> None:
+    """Create Bayern analysis tables if they don't exist."""
+    ANALYSIS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _analysis_conn() as c:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS matches (
+                id          TEXT PRIMARY KEY,
+                date        TEXT,
+                competition TEXT,
+                home_team   TEXT,
+                away_team   TEXT,
+                home_goals  INTEGER,
+                away_goals  INTEGER,
+                analysed    INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS match_shots (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id    TEXT REFERENCES matches(id),
+                x           REAL,
+                y           REAL,
+                xG          REAL,
+                result      TEXT,
+                situation   TEXT,
+                shot_type   TEXT,
+                minute      INTEGER,
+                player      TEXT,
+                team        TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS text_sources (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id    TEXT REFERENCES matches(id),
+                source      TEXT,
+                content     TEXT,
+                fetched_at  TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS match_events (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id            TEXT REFERENCES matches(id),
+                minute              INTEGER,
+                type                TEXT,
+                direction           TEXT,
+                situation           TEXT,
+                trigger             TEXT,
+                defensive_cover     TEXT,
+                players_involved    TEXT,
+                outcome             TEXT,
+                description         TEXT,
+                confidence          TEXT
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_match_events_match ON match_events(match_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_text_sources_match ON text_sources(match_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_match_shots_match ON match_shots(match_id)")
+
+
+# ── Bayern analysis CRUD ──────────────────────────────────────────────────────
+
+def upsert_match(match: dict) -> None:
+    """Insert or update a match row. dict keys: id, date, competition, home_team, away_team, home_goals, away_goals."""
+    with _analysis_conn() as c:
+        c.execute(
+            """
+            INSERT INTO matches (id, date, competition, home_team, away_team, home_goals, away_goals)
+            VALUES (:id, :date, :competition, :home_team, :away_team, :home_goals, :away_goals)
+            ON CONFLICT(id) DO UPDATE SET
+                date        = excluded.date,
+                competition = excluded.competition,
+                home_team   = excluded.home_team,
+                away_team   = excluded.away_team,
+                home_goals  = excluded.home_goals,
+                away_goals  = excluded.away_goals
+            """,
+            match,
+        )
+
+
+def get_match(match_id: str) -> dict | None:
+    with _analysis_conn() as c:
+        row = c.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_matches(competition: str | None = None) -> list[dict]:
+    with _analysis_conn() as c:
+        if competition:
+            rows = c.execute(
+                "SELECT * FROM matches WHERE competition = ? ORDER BY date DESC",
+                (competition,),
+            ).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM matches ORDER BY date DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_match_analysed(match_id: str) -> None:
+    with _analysis_conn() as c:
+        c.execute("UPDATE matches SET analysed = 1 WHERE id = ?", (match_id,))
+
+
+def insert_text_source(match_id: str, source: str, content: str) -> None:
+    from datetime import datetime, timezone
+    now = datetime.now(tz=timezone.utc).isoformat()
+    with _analysis_conn() as c:
+        c.execute(
+            "INSERT INTO text_sources (match_id, source, content, fetched_at) VALUES (?, ?, ?, ?)",
+            (match_id, source, content, now),
+        )
+
+
+def get_text_sources(match_id: str) -> list[dict]:
+    with _analysis_conn() as c:
+        rows = c.execute(
+            "SELECT id, source, content, fetched_at FROM text_sources WHERE match_id = ?",
+            (match_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_match_shots(rows: list[dict]) -> None:
+    with _analysis_conn() as c:
+        c.executemany(
+            """
+            INSERT INTO match_shots (match_id, x, y, xG, result, situation, shot_type, minute, player, team)
+            VALUES (:match_id, :x, :y, :xG, :result, :situation, :shot_type, :minute, :player, :team)
+            """,
+            rows,
+        )
+
+
+def get_match_shots(match_id: str) -> list[dict]:
+    with _analysis_conn() as c:
+        rows = c.execute("SELECT * FROM match_shots WHERE match_id = ?", (match_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_match_events(events: list[dict]) -> None:
+    with _analysis_conn() as c:
+        c.executemany(
+            """
+            INSERT INTO match_events
+                (match_id, minute, type, direction, situation, trigger,
+                 defensive_cover, players_involved, outcome, description, confidence)
+            VALUES
+                (:match_id, :minute, :type, :direction, :situation, :trigger,
+                 :defensive_cover, :players_involved, :outcome, :description, :confidence)
+            """,
+            events,
+        )
+
+
+def get_match_events(match_id: str) -> list[dict]:
+    with _analysis_conn() as c:
+        rows = c.execute(
+            "SELECT * FROM match_events WHERE match_id = ? ORDER BY minute",
+            (match_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_events(direction: str | None = None, competition: str | None = None) -> list[dict]:
+    """Return all events, optionally filtered by direction and/or competition."""
+    with _analysis_conn() as c:
+        query = """
+            SELECT e.*, m.competition, m.date, m.home_team, m.away_team
+            FROM match_events e
+            JOIN matches m ON m.id = e.match_id
+            WHERE 1=1
+        """
+        params: list = []
+        if direction:
+            query += " AND e.direction = ?"
+            params.append(direction)
+        if competition:
+            query += " AND m.competition = ?"
+            params.append(competition)
+        query += " ORDER BY m.date DESC, e.minute"
+        rows = c.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
 
 
 def upsert_players(rows: list[dict]) -> None:
