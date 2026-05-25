@@ -28,8 +28,13 @@ HEADERS = {
 }
 
 
+_UMLAUT_MAP = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+                             "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
+
+
 def _slug(date: str, home: str, away: str) -> str:
     def clean(s: str) -> str:
+        s = s.translate(_UMLAUT_MAP)
         return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
     return f"{date}_{clean(home)}_{clean(away)}"
 
