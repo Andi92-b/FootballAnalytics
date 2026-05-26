@@ -105,9 +105,17 @@ def init_analysis_db() -> None:
                 away_team   TEXT,
                 home_goals  INTEGER,
                 away_goals  INTEGER,
+                home_xg     REAL,
+                away_xg     REAL,
                 analysed    INTEGER DEFAULT 0
             )
         """)
+        # Migrate existing DBs that lack xG columns
+        for col in ("home_xg", "away_xg"):
+            try:
+                c.execute(f"ALTER TABLE matches ADD COLUMN {col} REAL")
+            except Exception:
+                pass
         c.execute("""
             CREATE TABLE IF NOT EXISTS match_shots (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,21 +164,42 @@ def init_analysis_db() -> None:
 # ── Bayern analysis CRUD ──────────────────────────────────────────────────────
 
 def upsert_match(match: dict) -> None:
-    """Insert or update a match row. dict keys: id, date, competition, home_team, away_team, home_goals, away_goals."""
+    """Insert or update a match row.
+
+    Required keys: id, date, competition, home_team, away_team, home_goals, away_goals.
+    Optional keys: home_xg, away_xg.
+    """
+    row = {
+        "id": match["id"],
+        "date": match["date"],
+        "competition": match["competition"],
+        "home_team": match["home_team"],
+        "away_team": match["away_team"],
+        "home_goals": match.get("home_goals"),
+        "away_goals": match.get("away_goals"),
+        "home_xg": match.get("home_xg"),
+        "away_xg": match.get("away_xg"),
+    }
     with _analysis_conn() as c:
         c.execute(
             """
-            INSERT INTO matches (id, date, competition, home_team, away_team, home_goals, away_goals)
-            VALUES (:id, :date, :competition, :home_team, :away_team, :home_goals, :away_goals)
+            INSERT INTO matches
+                (id, date, competition, home_team, away_team,
+                 home_goals, away_goals, home_xg, away_xg)
+            VALUES
+                (:id, :date, :competition, :home_team, :away_team,
+                 :home_goals, :away_goals, :home_xg, :away_xg)
             ON CONFLICT(id) DO UPDATE SET
                 date        = excluded.date,
                 competition = excluded.competition,
                 home_team   = excluded.home_team,
                 away_team   = excluded.away_team,
-                home_goals  = excluded.home_goals,
-                away_goals  = excluded.away_goals
+                home_goals  = COALESCE(excluded.home_goals, matches.home_goals),
+                away_goals  = COALESCE(excluded.away_goals, matches.away_goals),
+                home_xg     = COALESCE(excluded.home_xg, matches.home_xg),
+                away_xg     = COALESCE(excluded.away_xg, matches.away_xg)
             """,
-            match,
+            row,
         )
 
 
