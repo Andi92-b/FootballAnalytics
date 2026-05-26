@@ -50,9 +50,18 @@ def fetch_and_store(timeout: float = 15.0) -> list[dict]:
     """
     Scrape Transfermarkt schedule, upsert into matches table, return list of match dicts.
     Only captures competitions in COMPETITION_MAP.
+
+    Note: Transfermarkt blocks datacenter/cloud IPs via Cloudflare.
+    Run from a residential IP or use seed_db.py for development/CI.
     """
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=timeout) as client:
         resp = client.get(TRANSFERMARKT_URL)
+        if resp.status_code == 403:
+            raise PermissionError(
+                "Transfermarkt returned 403 — Cloudflare blocks datacenter IPs. "
+                "Run from your local machine, or populate via: "
+                "python -m backend.scripts.seed_db"
+            )
         resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
