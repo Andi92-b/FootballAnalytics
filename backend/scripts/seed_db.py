@@ -1,6 +1,9 @@
 """
 Seeds the analysis DB with a representative Bayern München 2025-26 fixture list.
 
+Covers the full season: 34 Bundesliga, 13 Champions League (incl. final),
+5 DFB Pokal (incl. final) = 52 matches.
+
 Use this for development, CI, or when Transfermarkt is inaccessible (cloud/CI IPs
 are blocked by Cloudflare). Data represents a realistic but illustrative season —
 replace with live data once you can run fetch_and_store() from a residential IP.
@@ -72,12 +75,16 @@ FIXTURES: list[dict] = [
     {"date": "2026-03-11", "competition": "Champions League",  "home_team": "Real Madrid",             "away_team": "FC Bayern München",          "home_goals": 2, "away_goals": 1},
     {"date": "2026-04-07", "competition": "Champions League",  "home_team": "FC Bayern München",       "away_team": "Arsenal FC",                 "home_goals": 2, "away_goals": 0},
     {"date": "2026-04-14", "competition": "Champions League",  "home_team": "Arsenal FC",              "away_team": "FC Bayern München",          "home_goals": 1, "away_goals": 1},
+    # Bayern advance 3–1 on aggregate → CL Final
+    {"date": "2026-05-27", "competition": "Champions League",  "home_team": "FC Bayern München",       "away_team": "Paris Saint-Germain",        "home_goals": 2, "away_goals": 1},
 
     # ── DFB Pokal ───────────────────────────────────────────────────────────────
     {"date": "2025-10-29", "competition": "DFB Pokal",         "home_team": "FC Bayern München",       "away_team": "Alemannia Aachen",           "home_goals": 6, "away_goals": 0},
     {"date": "2026-01-07", "competition": "DFB Pokal",         "home_team": "FC Bayern München",       "away_team": "Borussia Dortmund",          "home_goals": 3, "away_goals": 1},
     {"date": "2026-03-03", "competition": "DFB Pokal",         "home_team": "FC Bayern München",       "away_team": "Bayer 04 Leverkusen",        "home_goals": 2, "away_goals": 1},
     {"date": "2026-04-22", "competition": "DFB Pokal",         "home_team": "FC Bayern München",       "away_team": "Eintracht Frankfurt",        "home_goals": 3, "away_goals": 0},
+    # Bayern advance → DFB Pokal Final (Olympiastadion Berlin)
+    {"date": "2026-05-23", "competition": "DFB Pokal",         "home_team": "FC Bayern München",       "away_team": "RB Leipzig",                 "home_goals": 3, "away_goals": 0},
 ]
 # fmt: on
 
