@@ -243,12 +243,18 @@ export default function Home() {
     <main className="min-h-screen bg-white flex flex-col items-center py-16 px-4">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Football Analytics</h1>
       <p className="text-gray-500 mb-3">Position-specific pizza charts from multi-source data</p>
-      <div className="mb-8">
+      <div className="mb-8 flex gap-3">
         <Link
           href="/clusters"
           className="text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 rounded-full px-3 py-1 hover:bg-indigo-50 transition-colors"
         >
           Cluster Explorer →
+        </Link>
+        <Link
+          href="/analysis"
+          className="text-xs text-red-600 hover:text-red-800 border border-red-200 rounded-full px-3 py-1 hover:bg-red-50 transition-colors"
+        >
+          Bayern Analysis →
         </Link>
       </div>
 
